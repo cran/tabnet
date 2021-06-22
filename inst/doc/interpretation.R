@@ -60,25 +60,10 @@ vip::vip(fit_syn2)
 library(tidyverse)
 ex_syn2 <- tabnet_explain(fit_syn2, syn2)
 
-ex_syn2$M_explain %>% 
-  mutate(rowname = row_number()) %>% 
-  pivot_longer(-rowname, names_to = "variable", values_to = "m_agg") %>% 
-  ggplot(aes(x = rowname, y = variable, fill = m_agg)) +
-  geom_tile() +
-  scale_fill_viridis_c()
+autoplot(ex_syn2)
 
 ## -----------------------------------------------------------------------------
-ex_syn2$masks %>% 
-  imap_dfr(~mutate(
-    .x, 
-    step = sprintf("Step %d", .y),
-    rowname = row_number()
-  )) %>% 
-  pivot_longer(-c(rowname, step), names_to = "variable", values_to = "m_agg") %>% 
-  ggplot(aes(x = rowname, y = variable, fill = m_agg)) +
-  geom_tile() +
-  scale_fill_viridis_c() +
-  facet_wrap(~step)
+autoplot(ex_syn2, type="steps")
 
 ## -----------------------------------------------------------------------------
 fit_syn4 <- tabnet_fit(y ~ ., syn4, epochs = 10, verbose = TRUE)
@@ -88,29 +73,9 @@ vip::vip(fit_syn4)
 
 ## -----------------------------------------------------------------------------
 ex_syn4 <- tabnet_explain(fit_syn4, arrange(syn4, V10))
-q99 <- function(x) quantile(x, probs = 0.995)
 
-ex_syn4$M_explain %>% 
-  mutate(rowname = row_number()) %>% 
-  pivot_longer(-rowname, names_to = "variable", values_to = "m_agg") %>% 
-  mutate(m_agg = ifelse(m_agg > q99(m_agg), q99(m_agg), m_agg)) %>% 
-  ggplot(aes(x = rowname, y = variable, fill = m_agg)) +
-  geom_tile() +
-  scale_fill_viridis_c()
+autoplot(ex_syn4, quantile=.995)
 
 ## -----------------------------------------------------------------------------
-ex_syn4$masks %>% 
-  imap_dfr(~mutate(
-    .x, 
-    step = sprintf("Step %d", .y),
-    rowname = row_number()
-  )) %>% 
-  pivot_longer(-c(rowname, step), names_to = "variable", values_to = "m_agg") %>% 
-  group_by(step) %>% 
-  mutate(m_agg = ifelse(m_agg > q99(m_agg), q99(m_agg), m_agg)) %>% 
-  ungroup() %>% 
-  ggplot(aes(x = rowname, y = variable, fill = m_agg)) +
-  geom_tile() +
-  scale_fill_viridis_c() +
-  facet_wrap(~step)
+autoplot(ex_syn4, type="steps", quantile=.995)
 

@@ -104,6 +104,106 @@ test_that("can train from a recipe", {
 
 })
 
+test_that("data-frame with missing value makes training fails with explicit message", {
+
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  x <- attrition[ids,-which(names(attrition) == "Attrition")]
+  y <- attrition[ids,]$Attrition
+  y_missing <- y
+  y_missing[1] <- NA
+
+  # numerical missing
+  x_missing <- x
+  x_missing[1,"Age"] <- NA
+
+  expect_error(
+    miss_fit <- tabnet_fit(x_missing, y, epochs = 1),
+    regexp = "missing"
+  )
+
+  # categorical missing
+  x_missing <- x
+  x_missing[1,"BusinessTravel"] <- NA
+
+  expect_error(
+    miss_fit <- tabnet_fit(x_missing, y, epochs = 1),
+    regexp = "missing"
+  )
+
+  # missing in outcome
+  expect_error(
+    miss_fit <- tabnet_fit(x, y_missing, epochs = 1),
+    regexp = "missing"
+  )
+
+})
+
+test_that("data-frame with missing value makes inference fails with explicit message", {
+
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  x <- attrition[ids,-which(names(attrition) == "Attrition")]
+  y <- attrition[ids,]$Attrition
+  #
+  fit <- tabnet_fit(x, y, epochs = 1)
+
+  # numerical missing
+  x_missing <- x
+  x_missing[1,"Age"] <- NA
+
+  # predict with numerical missing
+  expect_error(
+    predict(fit, x_missing),
+    regexp = "missing"
+  )
+  # categorical missing
+  x_missing <- x
+  x_missing[1,"BusinessTravel"] <- NA
+
+  # predict
+  expect_error(
+    predict(fit, x_missing),
+    regexp = "missing"
+  )
+
+})
+test_that("inference works with missings in the response vector", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  fit <- tabnet_fit(rec, attrition, epochs = 1, valid_split = 0.25,
+                    verbose = TRUE)
+  # predict with empty vector
+  attrition[["EnvironmentSatisfaction"]] <-NA
+  expect_error(
+    predict(fit, attrition),
+    regexp = NA
+  )
+
+  # predict with wrong class
+  attrition[["EnvironmentSatisfaction"]] <-NA_character_
+  expect_error(
+    predict(fit, attrition),
+    regexp = NA
+  )
+
+  # predict with list column
+  attrition[["EnvironmentSatisfaction"]] <- list(NA)
+  expect_error(
+    predict(fit, attrition),
+    regexp = NA
+  )
+
+})
+
+
 test_that("serialization with saveRDS just works", {
 
   data("ames", package = "modeldata")
@@ -112,14 +212,18 @@ test_that("serialization with saveRDS just works", {
   y <- ames$Sale_Price
 
   fit <- tabnet_fit(x, y, epochs = 1)
+  predictions <-  predict(fit, ames)
 
   tmp <- tempfile("model", fileext = "rds")
   saveRDS(fit, tmp)
 
+  rm(fit)
+  gc()
+
   fit2 <- readRDS(tmp)
 
   expect_equal(
-    predict(fit, ames),
+    predictions,
     predict(fit2, ames)
   )
 
@@ -152,7 +256,7 @@ test_that("scheduler works", {
 
 })
 
-test_that("checkpoints works", {
+test_that("checkpoints works for inference", {
 
   data("ames", package = "modeldata")
 
@@ -183,7 +287,7 @@ test_that("checkpoints works", {
 
 })
 
-test_that("print module works", {
+test_that("print module works even after a reload from disk", {
 
   testthat::local_edition(3)
   testthat::skip_on_os("linux")
@@ -194,13 +298,146 @@ test_that("print module works", {
   x <- ames[-which(names(ames) == "Sale_Price")]
   y <- ames$Sale_Price
 
-  expect_error(
-    fit <- tabnet_fit(x, y, epochs = 1),
-    regexp = NA
-  )
+  fit <- tabnet_fit(x, y, epochs = 1)
 
   withr::with_options(new = c(cli.width = 50),
                       expect_snapshot_output(fit))
 
+  tmp <- tempfile("model", fileext = "rds")
+  saveRDS(fit, tmp)
+  fit2 <- readRDS(tmp)
+
+  withr::with_options(new = c(cli.width = 50),
+                      expect_snapshot_output(fit2))
+
+
 })
+
+test_that("fit uses config parameters mix from config= and ...", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  fit <- tabnet_fit(rec, attrition, epochs = 1, valid_split = 0.25, verbose = TRUE,
+                    config = tabnet_config(decision_width=3, attention_width=5, cat_emb_dim = 2))
+  expect_error(
+    predict(fit, attrition),
+    regexp = NA
+  )
+
+  expect_equal(fit$fit$config$verbose, TRUE)
+  expect_equal(fit$fit$config$valid_split, 0.25)
+  expect_equal(fit$fit$config$n_d, 3)
+  expect_equal(fit$fit$config$n_a, 5)
+
+})
+
+test_that("fit works with entmax mask-type", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+
+  expect_error(
+    tabnet_fit(rec, attrition, epochs = 1, valid_split = 0.25, verbose = TRUE,
+                      config = tabnet_config( mask_type="entmax")),
+    regexp = NA
+  )
+  expect_error(
+    predict(tabnet_fit(rec, attrition, epochs = 1, valid_split = 0.25, verbose = TRUE,
+                       config = tabnet_config( mask_type="entmax")), attrition),
+    regexp = NA
+  )
+
+})
+
+test_that("fit raise an error with non-supported mask-type", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  expect_error(
+    tabnet_fit(rec, attrition, epochs = 1, valid_split = 0.25, verbose = TRUE,
+                      config = tabnet_config( mask_type="max_entropy")),
+    regexp = "either sparsemax or entmax"
+  )
+
+})
+
+test_that("config$loss=`auto` adapt to recipe outcome str()", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  # nominal outcome
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  fit_auto <- tabnet_fit(rec, attrition, epochs = 1, verbose = TRUE,
+                      config = tabnet_config( loss="auto"))
+  expect_equal(fit_auto$fit$config$loss_fn, torch::nn_cross_entropy_loss())
+
+  # numerical outcome
+  rec <- recipe(MonthlyIncome ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  fit_auto <- tabnet_fit(rec, attrition, epochs = 1, verbose = TRUE,
+                      config = tabnet_config( loss="auto"))
+  expect_equal(fit_auto$fit$config$loss_fn, torch::nn_mse_loss())
+
+})
+
+test_that("config$loss not adapted to recipe outcome raise an explicit error", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  # nominal outcome with numerical loss
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  expect_error(tabnet_fit(rec, attrition, epochs = 1, verbose = TRUE,
+                          config = tabnet_config( loss="mse")),
+              regexp = "is not a valid loss for outcome of type"
+  )
+  # numerical outcome
+  rec <- recipe(MonthlyIncome ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  expect_error(tabnet_fit(rec, attrition, epochs = 1, verbose = TRUE,
+                      config = tabnet_config( loss="cross_entropy")),
+               regexp = "is not a valid loss for outcome of type"
+  )
+})
+
+
+test_that("config$loss can be a function", {
+
+  library(recipes)
+  data("attrition", package = "modeldata")
+  ids <- sample(nrow(attrition), 256)
+
+  # nominal outcome loss
+  rec <- recipe(EnvironmentSatisfaction ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  fit_auto <- tabnet_fit(rec, attrition, epochs = 1, verbose = TRUE,
+                      config = tabnet_config( loss=torch::nn_nll_loss()))
+  expect_equivalent(fit_auto$fit$config$loss_fn, torch::nn_nll_loss())
+
+  # numerical outcome loss
+  rec <- recipe(MonthlyIncome ~ ., data = attrition[ids, ]) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+  fit_auto <- tabnet_fit(rec, attrition, epochs = 1, verbose = TRUE,
+                      config = tabnet_config( loss=torch::nn_poisson_nll_loss()))
+  expect_equivalent(fit_auto$fit$config$loss_fn, torch::nn_poisson_nll_loss())
+
+})
+
 

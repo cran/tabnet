@@ -15,6 +15,7 @@ tabnet_config(
   attention_width = NULL,
   num_steps = 3,
   feature_reusage = 1.3,
+  mask_type = "sparsemax",
   virtual_batch_size = 128,
   valid_split = 0,
   learn_rate = 0.02,
@@ -27,8 +28,10 @@ tabnet_config(
   num_independent = 2,
   num_shared = 2,
   momentum = 0.02,
+  pretraining_ratio = 0.5,
   verbose = FALSE,
-  device = "auto"
+  device = "auto",
+  importance_sample_size = NULL
 )
 }
 \arguments{
@@ -64,6 +67,9 @@ the paper n_d=n_a is usually a good choice. (default=8)}
 \item{feature_reusage}{(float) This is the coefficient for feature reusage in the masks.
 A value close to 1 will make mask selection least correlated between layers.
 Values range from 1.0 to 2.0.}
+
+\item{mask_type}{(character) Final layer of feature selector in the attentive_transformer
+block, either \code{"sparsemax"} or \code{"entmax"}.Defaults to \code{"sparsemax"}.}
 
 \item{virtual_batch_size}{(int) Size of the mini batches used for
 "Ghost Batch Normalization" (default=128)}
@@ -102,11 +108,18 @@ range from 1 to 5}
 \item{momentum}{Momentum for batch normalization, typically ranges from 0.01
 to 0.4 (default=0.02)}
 
+\item{pretraining_ratio}{Ratio of features to mask for reconstruction during
+pretraining.  Ranges from 0 to 1 (default=0.5)}
+
 \item{verbose}{(bool) wether to print progress and loss values during
 training.}
 
 \item{device}{the device to use for training. "cpu" or "cuda". The default ("auto")
 uses  to "cuda" if it's available, otherwise uses "cpu".}
+
+\item{importance_sample_size}{sample of the dataset to compute importance metrics.
+If the dataset is larger than 1e5 obs we will use a sample of size 1e5 and
+display a warning.}
 }
 \value{
 A named list with all hyperparameters of the TabNet implementation.
