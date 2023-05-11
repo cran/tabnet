@@ -20,9 +20,9 @@
 #'
 #' n <- 1000
 #' x <- data.frame(
-#'   x = runif(n),
-#'   y = runif(n),
-#'   z = runif(n)
+#'   x = rnorm(n),
+#'   y = rnorm(n),
+#'   z = rnorm(n)
 #' )
 #'
 #' y <- x$x
@@ -41,9 +41,26 @@
 #'
 #' @export
 tabnet_explain <- function(object, new_data) {
-  processed <- hardhat::forge(new_data, object$blueprint)
-  data <- resolve_data(processed$predictors, y = data.frame(rep(1, nrow(new_data))))
-  output <- explain_impl(object$fit$network, data$x)
+  UseMethod("tabnet_explain")
+}
+
+#' @export
+#' @rdname tabnet_explain
+tabnet_explain.default <- function(object, new_data) {
+  stop(
+    "`tabnet_explain()` is not defined for a '", class(object)[1], "'.",
+    call. = FALSE
+  )
+}
+
+#' @export
+#' @rdname tabnet_explain
+tabnet_explain.tabnet_fit <- function(object, new_data) {
+  processed <- hardhat::forge(new_data, object$blueprint, outcomes = FALSE)
+  data <- resolve_data(processed$predictors, y = rep(1, nrow(processed$predictors)))
+  device <- get_device_from_config(object$fit$config)
+  data <- to_device(data, device)
+  output <- explain_impl(object$fit$network, data$x, data$x_na_mask)
 
   # convert stuff to matrix with colnames
   nms <- colnames(processed$predictors)
@@ -53,15 +70,29 @@ tabnet_explain <- function(object, new_data) {
   output
 }
 
+#' @export
+#' @rdname tabnet_explain
+tabnet_explain.tabnet_pretrain <- tabnet_explain.tabnet_fit
+
+#' @export
+#' @rdname tabnet_explain
+tabnet_explain.model_fit <- function(object, new_data) {
+  tabnet_explain(parsnip::extract_fit_engine(object), new_data)
+}
+
 convert_to_df <- function(x, nms) {
   x <- as.data.frame(as.matrix(x$to(device = "cpu")$detach()))
   colnames(x) <- nms
   tibble::as_tibble(x)
 }
 
-explain_impl <- function(network, x) {
-
-  outputs <- network$forward_masks(x)
+explain_impl <- function(network, x, x_na_mask) {
+  curr_device <- network$.check$device
+  withr::defer({
+    network$to(device = curr_device)
+  })
+  network$to(device=x$device)
+  outputs <- network$forward_masks(x, x_na_mask)
 
   # summarize the categorical embeddedings into 1 column
   # per variable
@@ -80,11 +111,11 @@ explain_impl <- function(network, x) {
     cat_emb_dim = network$cat_emb_dim
   )
 
-  list(M_explain = M_explain, masks = masks)
+  list(M_explain = M_explain$to(device="cpu"), masks = to_device(masks, "cpu"))
 }
 
-compute_feature_importance <- function(network, x) {
-  out <- explain_impl(network, x)
+compute_feature_importance <- function(network, x, x_na_mask) {
+  out <- explain_impl(network, x, x_na_mask)
   m <- as.numeric(as.matrix(out$M_explain$sum(dim = 1)$detach()$to(device = "cpu")))
   m/sum(m)
 }
@@ -106,3 +137,4 @@ vi_model.tabnet_fit <- function(object, ...) {
   tib
 }
 
+vi_model.tabnet_pretrain <- vi_model.tabnet_fit

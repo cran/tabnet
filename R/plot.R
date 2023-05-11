@@ -11,13 +11,16 @@
 #'
 #' @examples
 #' \donttest{
+#' if (torch::torch_is_installed()) {
 #' library(ggplot2)
 #' data("attrition", package = "modeldata")
-#' attrition_fit <- tabnet_fit(Attrition ~. , data=attrition, valid_split=0.2, epoch=15)
+#' attrition_fit <- tabnet_fit(Attrition ~. , data=attrition, valid_split=0.2, epoch=11)
 #'
 #' # Plot the model loss over epochs
 #' autoplot(attrition_fit)
 #' }
+#' }
+#' @importFrom rlang .data
 #'
 autoplot.tabnet_fit <- function(object, ...) {
 
@@ -26,20 +29,28 @@ autoplot.tabnet_fit <- function(object, ...) {
   collect_metrics <- tibble::enframe(object$fit$metrics,name = "epoch") %>%
     tidyr::unnest_longer(value,indices_to = "dataset") %>%
     tidyr::unnest_wider(value) %>%
-    # remove the valid col if all NAs to prevent ggplot warnings
+    # drop entries from pretrain that have missing `dataset`
+    tidyr::drop_na(dataset) %>%
     tidyr::pivot_wider(values_from = loss, names_from = dataset) %>%
-    dplyr::select_if(~!all(is.na(.x))) %>%
+    # remove the valid col if all NAs to prevent ggplot warnings
+    dplyr::select_if(function(x) {!all(is.na(x))} ) %>%
     tidyr::pivot_longer(cols = !epoch, names_to = "dataset", values_to = "loss") %>%
     # add checkpoints
     dplyr::mutate(mean_loss = purrr::map_dbl(loss, mean),
-           has_checkpoint = epoch %in% epoch_checkpointed_seq) %>%
+           has_checkpoint = epoch %in% (epoch_checkpointed_seq + min(epoch, na.rm=TRUE) - 1)) %>%
     dplyr::select(-loss)
 
-  checkpoints <- collect_metrics %>% dplyr::filter(has_checkpoint, dataset=="train")
+  checkpoints <- collect_metrics %>%
+    dplyr::filter(has_checkpoint, dataset=="train") %>%
+    dplyr::mutate(size=2)
   p <- ggplot2::ggplot(collect_metrics, ggplot2::aes(x=epoch, y=mean_loss, color=dataset)) +
-    ggplot2::geom_point(data = checkpoints, ggplot2::aes(x=epoch, y=mean_loss, color=dataset), size = 2 ) +
     ggplot2::geom_line() +
-    ggplot2::scale_y_log10()
+    ggplot2::geom_point(data = checkpoints, ggplot2::aes(x=epoch, y=mean_loss, color=dataset, size = .data$size ) ) +
+    ggplot2::scale_y_log10() +
+    ggplot2::guides(colour = ggplot2::guide_legend("Dataset", order=1, override.aes = list(size=1.5, shape=" ")),
+           size= ggplot2::guide_legend("has checkpoint", order=2, override.aes = list(size=3, color="#F8766D"), label.theme = ggplot2::element_text(colour = "#FFFFFF"))) +
+    ggplot2::theme(legend.position = "bottom") +
+    ggplot2::labs(y="Mean loss (log scale)")
   p
   }
 
@@ -65,14 +76,15 @@ autoplot.tabnet_pretrain <- autoplot.tabnet_fit
 #'
 #' @examples
 #' \donttest{
+#' if (torch::torch_is_installed()) {
 #' library(ggplot2)
 #' data("attrition", package = "modeldata")
-#' attrition_fit <- tabnet_fit(Attrition ~. , data=attrition, epoch=15)
+#' attrition_fit <- tabnet_fit(Attrition ~. , data=attrition, epoch=11)
 #' attrition_explain <- tabnet_explain(attrition_fit, attrition)
 #' # Plot the model aggregated mask interpretation heatmap
 #' autoplot(attrition_explain)
 #' }
-#'
+#' }
 #'
 autoplot.tabnet_explain <- function(object, type = c("mask_agg", "steps"), quantile = 1, ...) {
   type <- match.arg(type)

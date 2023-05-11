@@ -1,6 +1,6 @@
 train_batch_un <- function(network, optimizer, batch, config) {
   # forward pass
-  output <- network(batch)
+  output <- network(batch$x, batch$x_na_mask)
   loss <- config$loss_fn(output[[1]], output[[2]], output[[3]])
 
   # step of the backward pass and optimization
@@ -18,8 +18,9 @@ train_batch_un <- function(network, optimizer, batch, config) {
 
 valid_batch_un <- function(network, batch, config) {
   # forward pass
-  output <- network(batch)
-  loss <- config$loss_fn(output[[1]], output[[2]], output[[3]])
+  output <- network(batch$x, batch$x_na_mask)
+  # we inverse the batch_na_mask here to avoid nan in the loss
+  loss <- config$loss_fn(output[[1]], output[[2]], output[[3]]$logical_not())
 
   list(
     loss = loss$item()
@@ -39,7 +40,7 @@ transpose_metrics <- function(metrics) {
     }
   }
 
-  out
+  out[-1]
 }
 
 unsupervised_loss <- function(y_pred, embedded_x, obfuscation_mask, eps = 1e-9) {
@@ -60,52 +61,55 @@ unsupervised_loss <- function(y_pred, embedded_x, obfuscation_mask, eps = 1e-9) 
 tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift = 0L) {
   torch::torch_manual_seed(sample.int(1e6, 1))
 
-  if (config$device == "auto") {
-    if (torch::cuda_is_available())
-      device <- "cuda"
-    else
-      device <- "cpu"
-  } else {
-    device <- config$device
-  }
+  device <- get_device_from_config(config)
 
-  # dataset to dataloaders
+  # validation dataset & dataloaders
   has_valid <- config$valid_split > 0
   if (has_valid) {
     n <- nrow(x)
     valid_idx <- sample.int(n, n*config$valid_split)
-    valid_data <- list(x = x[valid_idx, ])
-    x <- x[-valid_idx, ]
+    valid_x <- x[valid_idx, ]
+    valid_ds <-   torch::dataset(
+      initialize = function() {},
+      .getbatch = function(batch) {resolve_data(valid_x[batch,], rep(1, length(batch)))},
+      .length = function() {nrow(valid_x)}
+    )()
 
+    valid_dl <- torch::dataloader(
+      valid_ds,
+      batch_size = config$batch_size,
+      shuffle = FALSE ,
+      num_workers = config$num_workers
+    )
+
+    x <- x[-valid_idx, ]
   }
-  # training data
-  data <- resolve_data(x, y=matrix(rep(1, nrow(x)),ncol=1))
-  dl <- torch::dataloader(
-    torch::tensor_dataset(x = data$x),
+
+  # training dataset & dataloader
+  train_ds <-   torch::dataset(
+    initialize = function() {},
+    .getbatch = function(batch) {resolve_data(x[batch,], rep(1, length(batch)))},
+    .length = function() {nrow(x)}
+  )()
+  # we can get training_set parameters from the 2 first samples
+  train <- train_ds$.getbatch(batch = c(1:2))
+
+  train_dl <- torch::dataloader(
+    train_ds,
     batch_size = config$batch_size,
     drop_last = config$drop_last,
-    shuffle = TRUE
+    shuffle = TRUE ,
+    num_workers = config$num_workers
   )
-
-  # validation data
-  if (has_valid) {
-    valid_data <- resolve_data(valid_data$x, y=matrix(rep(1, nrow(valid_data$x)),ncol=1))
-    valid_dl <- torch::dataloader(
-      torch::tensor_dataset(x = valid_data$x),
-      batch_size = config$batch_size,
-      drop_last = FALSE,
-      shuffle = FALSE
-    )
-  }
 
   # resolve loss (shortcutted from config)
   config$loss_fn <- unsupervised_loss
 
   # create network
   network <- tabnet_pretrainer(
-    input_dim = data$input_dim,
-    cat_idxs = data$cat_idx,
-    cat_dims = data$cat_dims,
+    input_dim = train$input_dim,
+    cat_idxs = train$cat_idx,
+    cat_dims = train$cat_dims,
     pretraining_ratio = config$pretraining_ratio,
     n_d = config$n_d,
     n_a = config$n_a,
@@ -146,11 +150,12 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
   # initialize metrics & checkpoints
   metrics <- list()
   checkpoints <- list()
+  patience_counter <- 0L
 
   # main loop
   for (epoch in seq_len(config$epochs) + epoch_shift) {
 
-    metrics[[epoch]] <- list(train = NULL, valid = NULL)
+    metrics[[epoch]] <- list()
     train_metrics <- c()
     valid_metrics <- c()
 
@@ -158,13 +163,12 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
 
     if (config$verbose)
       pb <- progress::progress_bar$new(
-        total = length(dl),
+        total = length(train_dl),
         format = "[:bar] loss= :loss"
       )
 
-    coro::loop(for (batch in dl) {
-      batch_x_to_device <- batch$x$to(device=device)
-      m <- train_batch_un(network, optimizer, batch_x_to_device, config)
+    coro::loop(for (batch in train_dl) {
+      m <- train_batch_un(network, optimizer, to_device(batch, device), config)
       if (config$verbose) pb$tick(tokens = m)
       train_metrics <- c(train_metrics, m)
     })
@@ -179,8 +183,7 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
     network$eval()
     if (has_valid) {
       coro::loop(for (batch in valid_dl) {
-        batch_x_to_device <- batch$x$to(device=device)
-        m <- valid_batch_un(network, batch_x_to_device, config)
+        m <- valid_batch_un(network, to_device(batch, device), config)
         valid_metrics <- c(valid_metrics, m)
       })
       metrics[[epoch]][["valid"]] <- transpose_metrics(valid_metrics)
@@ -193,14 +196,57 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
     if (config$verbose)
       rlang::inform(message)
 
+    # Early-stopping checks
+    if (config$early_stopping && config$early_stopping_monitor=="valid_loss"){
+      current_loss <- mean(metrics[[epoch]]$valid$loss)
+    } else {
+      current_loss <- mean(metrics[[epoch]]$train$loss)
+    }
+    if (config$early_stopping && epoch > 1+epoch_shift) {
+      # compute relative change, and compare to best_metric
+      change <- (current_loss - best_metric) / current_loss
+      if (change > config$early_stopping_tolerance){
+        patience_counter <- patience_counter + 1
+        if (patience_counter >= config$early_stopping_patience){
+          if (config$verbose)
+            rlang::inform(sprintf("Early stopping at epoch %03d", epoch))
+          break
+        }
+      } else {
+        # reset the patience counter
+        best_metric <- current_loss
+        patience_counter <- 0L
+      }
+    }
+    if (config$early_stopping && epoch == 1+epoch_shift) {
+      # initialise best_metric
+      best_metric <- current_loss
+    }
+
+
     scheduler$step()
   }
 
   network$to(device = "cpu")
 
+  importance_sample_size <- config$importance_sample_size
+  if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
+    rlang::warn(c(glue::glue("Computing importances for a dataset with size {train_ds$.length()}."),
+                  "This can consume too much memory. We are going to use a sample of size 1e5",
+                  "You can disable this message by using the `importance_sample_size` argument."))
+    importance_sample_size <- 1e5
+  }
+  indexes <- as.numeric(torch::torch_randint(
+    1, train_ds$.length(), min(importance_sample_size, train_ds$.length()),
+    dtype = torch::torch_long()
+  ))
   importances <- tibble::tibble(
     variables = colnames(x),
-    importance = compute_feature_importance(network, data$x)
+    importance = compute_feature_importance(
+      network,
+      train_ds$.getbatch(batch =indexes)$x$to(device = "cpu"),
+      train_ds$.getbatch(batch =indexes)$x_na_mask$to(device = "cpu")
+    )
   )
 
   list(

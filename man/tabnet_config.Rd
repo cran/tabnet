@@ -5,7 +5,7 @@
 \title{Configuration for TabNet models}
 \usage{
 tabnet_config(
-  batch_size = 256,
+  batch_size = 1024^2,
   penalty = 0.001,
   clip_value = NULL,
   loss = "auto",
@@ -16,7 +16,7 @@ tabnet_config(
   num_steps = 3,
   feature_reusage = 1.3,
   mask_type = "sparsemax",
-  virtual_batch_size = 128,
+  virtual_batch_size = 256^2,
   valid_split = 0,
   learn_rate = 0.02,
   optimizer = "adam",
@@ -31,12 +31,17 @@ tabnet_config(
   pretraining_ratio = 0.5,
   verbose = FALSE,
   device = "auto",
-  importance_sample_size = NULL
+  importance_sample_size = NULL,
+  early_stopping_monitor = "auto",
+  early_stopping_tolerance = 0,
+  early_stopping_patience = 0L,
+  num_workers = 0L,
+  skip_importance = FALSE
 )
 }
 \arguments{
 \item{batch_size}{(int) Number of examples per batch, large batch sizes are
-recommended. (default: 1024)}
+recommended. (default: 1024^2)}
 
 \item{penalty}{This is the extra sparsity loss coefficient as proposed
 in the original paper. The bigger this coefficient is, the sparser your model
@@ -51,7 +56,7 @@ for regression and cross entropy for classification)}
 
 \item{epochs}{(int) Number of training epochs.}
 
-\item{drop_last}{(bool) Whether to drop last batch if not complete during
+\item{drop_last}{(logical) Whether to drop last batch if not complete during
 training}
 
 \item{decision_width}{(int) Width of the decision prediction layer. Bigger values gives
@@ -72,7 +77,7 @@ Values range from 1.0 to 2.0.}
 block, either \code{"sparsemax"} or \code{"entmax"}.Defaults to \code{"sparsemax"}.}
 
 \item{virtual_batch_size}{(int) Size of the mini batches used for
-"Ghost Batch Normalization" (default=128)}
+"Ghost Batch Normalization" (default=256^2)}
 
 \item{valid_split}{(float) The fraction of the dataset used for validation.}
 
@@ -97,7 +102,7 @@ or \code{NULL}.}
 \code{checkpoint_epochs}. (default is 10). This may cause large memory usage.
 Use \code{0} to disable checkpoints.}
 
-\item{cat_emb_dim}{Embedding size for categorial features (default=1)}
+\item{cat_emb_dim}{Embedding size for categorical features (default=1)}
 
 \item{num_independent}{Number of independent Gated Linear Units layers at each step.
 Usual values range from 1 to 5.}
@@ -111,7 +116,7 @@ to 0.4 (default=0.02)}
 \item{pretraining_ratio}{Ratio of features to mask for reconstruction during
 pretraining.  Ranges from 0 to 1 (default=0.5)}
 
-\item{verbose}{(bool) wether to print progress and loss values during
+\item{verbose}{(logical) Whether to print progress and loss values during
 training.}
 
 \item{device}{the device to use for training. "cpu" or "cuda". The default ("auto")
@@ -120,6 +125,19 @@ uses  to "cuda" if it's available, otherwise uses "cpu".}
 \item{importance_sample_size}{sample of the dataset to compute importance metrics.
 If the dataset is larger than 1e5 obs we will use a sample of size 1e5 and
 display a warning.}
+
+\item{early_stopping_monitor}{Metric to monitor for early_stopping. One of "valid_loss", "train_loss" or "auto" (defaults to "auto").}
+
+\item{early_stopping_tolerance}{Minimum relative improvement to reset the patience counter.
+0.01 for 1\% tolerance (default 0)}
+
+\item{early_stopping_patience}{Number of epochs without improving until stopping training. (default=5)}
+
+\item{num_workers}{(int, optional): how many subprocesses to use for data
+loading. 0 means that the data will be loaded in the main process.
+(default: \code{0})}
+
+\item{skip_importance}{if feature importance calculation should be skipped (default: \code{FALSE})}
 }
 \value{
 A named list with all hyperparameters of the TabNet implementation.

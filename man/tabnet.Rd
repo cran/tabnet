@@ -32,7 +32,7 @@ will be in terms of feature selection. Depending on the difficulty of your
 problem, reducing this value could help.}
 
 \item{batch_size}{(int) Number of examples per batch, large batch sizes are
-recommended. (default: 1024)}
+recommended. (default: 1024^2)}
 
 \item{learn_rate}{initial learning rate for the optimizer.}
 
@@ -51,7 +51,7 @@ A value close to 1 will make mask selection least correlated between layers.
 Values range from 1.0 to 2.0.}
 
 \item{virtual_batch_size}{(int) Size of the mini batches used for
-"Ghost Batch Normalization" (default=128)}
+"Ghost Batch Normalization" (default=256^2)}
 
 \item{num_independent}{Number of independent Gated Linear Units layers at each step.
 Usual values range from 1 to 5.}
@@ -75,9 +75,11 @@ Parsnip compatible tabnet model
 TabNet uses \code{torch} as its backend for computation and \code{torch} uses all
 available threads by default.
 
-You can control the number of threads used by \code{torch} with:\preformatted{torch::torch_set_num_threads(1)
+You can control the number of threads used by \code{torch} with:
+
+\if{html}{\out{<div class="sourceCode">}}\preformatted{torch::torch_set_num_threads(1)
 torch::torch_set_num_interop_threads(1)
-}
+}\if{html}{\out{</div>}}
 }
 
 \examples{

@@ -1,46 +1,60 @@
 
-#' Transforms input data into tensors
+#' Transforms input data into a list of_tensors and parameters for model input
+#'
+#' The 3 torch tensors being
+#' $x , $x_na_mask, $y
+#'  and parameters being
+#' cat_idx the vector of x categorical predictor index
+#' cat_dims the vector of number of levels of each x categorical predictor
+#' input_dim  the number of col in `x`
+#' output_dim the `ncol(y)` in case of (multi-outcome) regression or
+#'            the `nlevels(y)` in case of classification or
+#'            the vector of `nlevels(y)` in case of multi-outcome classification
 #'
 #' @param x a data frame
 #' @param y a response vector
+#' @noRd
 resolve_data <- function(x, y) {
-  stopifnot("Error: found missing values in the predictor data frame" = sum(is.na(x))==0)
-  stopifnot("Error: found missing values in the response vector" = sum(is.na(y))==0)
-  # convert factors to integers
-  x_ <- x
-  for (v in seq_along(x_)) {
-    if (is.factor(x_[[v]]))
-      x_[[v]] <- as.numeric(x_[[v]])
-  }
-  x_tensor <- torch::torch_tensor(as.matrix(x_), dtype = torch::torch_float())
-
-  if (ncol(y) == 1)
-    y <- y[[1]]
-
-  if (is.factor(y)) {
-    y_tensor <- torch::torch_tensor(as.integer(y), dtype = torch::torch_int64())
-  } else {
-    y_tensor <- torch::torch_tensor(y, dtype = torch::torch_float())$unsqueeze(2)
-  }
-
   cat_idx <- which(sapply(x, is.factor))
-  cat_dims <- sapply(cat_idx, function(i) length(levels(x[[i]])))
+  cat_dims <- sapply(cat_idx, function(i) nlevels(x[[i]]))
+  # convert factors into integers
+  if (length(cat_idx) > 0) {
+    x[,cat_idx] <- sapply(cat_idx, function(i) as.integer(x[[i]]))
+  } else {
+    # prevent empty cat idx
+    cat_idx <- 0L
+    cat_dims <- 0L
+  }
+  x_tensor <- torch::torch_tensor(as.matrix(x), dtype = torch::torch_float())
+  x_na_mask <- x %>% is.na %>% as.matrix %>% torch::torch_tensor(dtype = torch::torch_bool())
 
-  if (is.factor(y))
-    output_dim <- max(as.integer(y))
-  else
-    output_dim <- 1
+  # convert factors to integers, based on the class of target first column
+  # TODO do not assume but assert type-consistency of all y cols
+  # and record output_dim
+  if (is.factor(y[[1]])) {
+    y_tensor <- torch::torch_tensor(sapply(y, function(i) as.integer(i)), dtype = torch::torch_long())
+    if (is.atomic(y)) {
+      output_dim <- nlevels(y)
+    } else {
+      output_dim <- sapply(y, function(i) nlevels(i))
+    }
+  } else {
+    y_tensor <- torch::torch_tensor(as.matrix(y), dtype = torch::torch_float())
+    output_dim <- ncol(y)
+  }
 
   input_dim <- ncol(x)
 
-  list(x = x_tensor, y = y_tensor, cat_idx = cat_idx, output_dim = output_dim,
+  list(x = x_tensor, x_na_mask = x_na_mask, y = y_tensor,
+       cat_idx = cat_idx,
+       output_dim = output_dim,
        input_dim = input_dim, cat_dims = cat_dims)
 }
 
 #' Configuration for TabNet models
 #'
 #' @param batch_size (int) Number of examples per batch, large batch sizes are
-#'   recommended. (default: 1024)
+#'   recommended. (default: 1024^2)
 #' @param penalty This is the extra sparsity loss coefficient as proposed
 #'   in the original paper. The bigger this coefficient is, the sparser your model
 #'   will be in terms of feature selection. Depending on the difficulty of your
@@ -50,7 +64,7 @@ resolve_data <- function(x, y) {
 #' @param loss (character or function) Loss function for training (default to mse
 #'   for regression and cross entropy for classification)
 #' @param epochs (int) Number of training epochs.
-#' @param drop_last (bool) Whether to drop last batch if not complete during
+#' @param drop_last (logical) Whether to drop last batch if not complete during
 #'   training
 #' @param decision_width (int) Width of the decision prediction layer. Bigger values gives
 #'   more capacity to the model with the risk of overfitting. Values typically
@@ -65,7 +79,7 @@ resolve_data <- function(x, y) {
 #' @param mask_type (character) Final layer of feature selector in the attentive_transformer
 #'   block, either `"sparsemax"` or `"entmax"`.Defaults to `"sparsemax"`.
 #' @param virtual_batch_size (int) Size of the mini batches used for
-#'   "Ghost Batch Normalization" (default=128)
+#'   "Ghost Batch Normalization" (default=256^2)
 #' @param learn_rate initial learning rate for the optimizer.
 #' @param optimizer the optimization method. currently only 'adam' is supported,
 #'   you can also pass any torch optimizer function.
@@ -74,7 +88,7 @@ resolve_data <- function(x, y) {
 #'   Usual values range from 1 to 5.
 #' @param num_shared Number of shared Gated Linear Units at each step Usual values
 #'   range from 1 to 5
-#' @param verbose (bool) wether to print progress and loss values during
+#' @param verbose (logical) Whether to print progress and loss values during
 #'   training.
 #' @param lr_scheduler if `NULL`, no learning rate decay is used. if "step"
 #'   decays the learning rate by `lr_decay` every `step_size` epochs. It can
@@ -85,7 +99,7 @@ resolve_data <- function(x, y) {
 #'   or `NULL`.
 #' @param step_size the learning rate scheduler step size. Unused if
 #'   `lr_scheduler` is a `torch::lr_scheduler` or `NULL`.
-#' @param cat_emb_dim Embedding size for categorial features (default=1)
+#' @param cat_emb_dim Embedding size for categorical features (default=1)
 #' @param momentum Momentum for batch normalization, typically ranges from 0.01
 #'   to 0.4 (default=0.02)
 #' @param pretraining_ratio Ratio of features to mask for reconstruction during
@@ -98,11 +112,18 @@ resolve_data <- function(x, y) {
 #' @param importance_sample_size sample of the dataset to compute importance metrics.
 #'   If the dataset is larger than 1e5 obs we will use a sample of size 1e5 and
 #'   display a warning.
-#'
+#' @param early_stopping_monitor Metric to monitor for early_stopping. One of "valid_loss", "train_loss" or "auto" (defaults to "auto").
+#' @param  early_stopping_tolerance Minimum relative improvement to reset the patience counter.
+#'  0.01 for 1% tolerance (default 0)
+#' @param early_stopping_patience Number of epochs without improving until stopping training. (default=5)
+#' @param num_workers (int, optional): how many subprocesses to use for data
+#'   loading. 0 means that the data will be loaded in the main process.
+#'   (default: `0`)
+#' @param skip_importance if feature importance calculation should be skipped (default: `FALSE`)
 #' @return A named list with all hyperparameters of the TabNet implementation.
 #'
 #' @export
-tabnet_config <- function(batch_size = 256,
+tabnet_config <- function(batch_size = 1024^2,
                           penalty = 1e-3,
                           clip_value = NULL,
                           loss = "auto",
@@ -113,7 +134,7 @@ tabnet_config <- function(batch_size = 256,
                           num_steps = 3,
                           feature_reusage = 1.3,
                           mask_type = "sparsemax",
-                          virtual_batch_size = 128,
+                          virtual_batch_size = 256^2,
                           valid_split = 0,
                           learn_rate = 2e-2,
                           optimizer = "adam",
@@ -128,8 +149,12 @@ tabnet_config <- function(batch_size = 256,
                           pretraining_ratio = 0.5,
                           verbose = FALSE,
                           device = "auto",
-                          importance_sample_size = NULL) {
-
+                          importance_sample_size = NULL,
+                          early_stopping_monitor = "auto",
+                          early_stopping_tolerance = 0,
+                          early_stopping_patience = 0L,
+                          num_workers=0L,
+                          skip_importance = FALSE) {
   if (is.null(decision_width) && is.null(attention_width)) {
     decision_width <- 8 # default is 8
   }
@@ -167,7 +192,13 @@ tabnet_config <- function(batch_size = 256,
     pretraining_ratio = pretraining_ratio,
     verbose = verbose,
     device = device,
-    importance_sample_size = importance_sample_size
+    importance_sample_size = importance_sample_size,
+    early_stopping_monitor = resolve_early_stop_monitor(early_stopping_monitor, valid_split),
+    early_stopping_tolerance = early_stopping_tolerance,
+    early_stopping_patience = early_stopping_patience,
+    early_stopping = !(early_stopping_tolerance==0 || early_stopping_patience==0),
+    num_workers = num_workers,
+    skip_importance = skip_importance
   )
 }
 
@@ -184,19 +215,40 @@ resolve_loss <- function(loss, dtype) {
   loss_fn
 }
 
+resolve_early_stop_monitor <- function(early_stopping_monitor, valid_split) {
+  if (early_stopping_monitor %in% c("valid_loss", "auto") && valid_split > 0)
+    early_stopping_monitor <- "valid_loss"
+  else if (early_stopping_monitor %in% c("train_loss", "auto"))
+    early_stopping_monitor <- "train_loss"
+  else
+    rlang::abort(paste0(early_stopping_monitor," is not a valid early stopping metric to monitor with `valid_split`=",valid_split))
 
-batch_to_device <- function(batch, device) {
-  batch <- list(x = batch$x, y  = batch$y)
-  lapply(batch, function(x) {
-    x$to(device = device)
-  })
+  early_stopping_monitor
 }
 
 train_batch <- function(network, optimizer, batch, config) {
   # forward pass
-  output <- network(batch$x)
-  loss <- config$loss_fn(output[[1]], batch$y)
-
+  output <- network(batch$x, batch$x_na_mask)
+  # if target is_multi_outcome, loss has to be applied to each label-group
+  if (max(batch$output_dim$shape) > 1) {
+    # TODO maybe torch_stack here would help loss$backward and better to shift right torch_sum at the end ?
+    outcome_nlevels <- as.numeric(batch$output_dim$to(device="cpu"))
+    loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
+      list(
+        torch::torch_split(output[[1]], outcome_nlevels, dim = 2),
+        torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
+      ),
+      ~config$loss_fn(.x, .y$squeeze(2))
+    )),
+    dim = 1)
+  } else {
+    if (batch$y$dtype == torch::torch_long()) {
+      # classifier needs a squeeze for bce loss
+      loss <- config$loss_fn(output[[1]], batch$y$squeeze(2))
+    } else {
+      loss <- config$loss_fn(output[[1]], batch$y)
+    }
+  }
   # Add the overall sparsity loss
   loss <- loss - config$lambda_sparse * output[[2]]
 
@@ -215,9 +267,27 @@ train_batch <- function(network, optimizer, batch, config) {
 
 valid_batch <- function(network, batch, config) {
   # forward pass
-  output <- network(batch$x)
-  loss <- config$loss_fn(output[[1]], batch$y)
-
+  output <- network(batch$x, batch$x_na_mask)
+  # loss has to be applied to each label-group when output_dim is a vector
+  if (max(batch$output_dim$shape) > 1) {
+    # TODO maybe torch_stack here would help loss$backward and better to shift right torch_sum at the end ?
+    outcome_nlevels <- as.numeric(batch$output_dim$to(device="cpu"))
+    loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
+      list(
+        torch::torch_split(output[[1]], outcome_nlevels, dim = 2),
+        torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
+      ),
+      ~config$loss_fn(.x, .y$squeeze(2))
+    )),
+    dim = 1)
+  } else {
+    if (batch$y$dtype == torch::torch_long()) {
+      # classifier needs a squeeze for bce loss
+      loss <- config$loss_fn(output[[1]], batch$y$squeeze(2))
+    } else {
+      loss <- config$loss_fn(output[[1]], batch$y)
+    }
+  }
   # Add the overall sparsity loss
   loss <- loss - config$lambda_sparse * output[[2]]
 
@@ -226,20 +296,19 @@ valid_batch <- function(network, batch, config) {
   )
 }
 
-transpose_metrics <- function(metrics) {
-  nms <- names(metrics[1])
-  out <- vector(mode = "list", length = length(nms))
-  for (nm in nms) {
-    out[[nm]] <- vector("numeric", length = length(metrics))
-  }
-
-  for (i in seq_along(metrics)) {
-    for (nm in nms) {
-      out[[nm]][i] <- metrics[i][[nm]]
+get_device_from_config <- function(config) {
+  if (config$device == "auto") {
+    if (torch::cuda_is_available()){
+      device <- "cuda"
+    } else if (torch::backends_mps_is_available()) {
+      device <- "mps"
+    } else {
+      device <- "cpu"
     }
+  } else {
+    device <- config$device
   }
-
-  out
+  device
 }
 
 tabnet_initialize <- function(x, y, config = tabnet_config()) {
@@ -247,44 +316,41 @@ tabnet_initialize <- function(x, y, config = tabnet_config()) {
   torch::torch_manual_seed(sample.int(1e6, 1))
   has_valid <- config$valid_split > 0
 
-  if (config$device == "auto") {
-    if (torch::cuda_is_available())
-      device <- "cuda"
-    else
-      device <- "cpu"
-  } else {
-    device <- config$device
-  }
+  device <- get_device_from_config(config)
 
   if (has_valid) {
     n <- nrow(x)
     valid_idx <- sample.int(n, n*config$valid_split)
-
-    if (is.data.frame(y)) {
-      valid_y <- y[valid_idx,]
-      train_y <- y[-valid_idx,]
-    } else if (is.numeric(y) || is.factor(y)) {
-      valid_y <- y[valid_idx]
-      train_y <- y[-valid_idx]
-    }
-
-    valid_data <- list(x = x[valid_idx, ], y = valid_y)
+    valid_x <- x[valid_idx, ]
+    valid_y <- y[valid_idx, ]
+    train_y <- y[-valid_idx, ]
+    valid_ds <-   torch::dataset(
+      initialize = function() {},
+      .getbatch = function(batch) {resolve_data(valid_x[batch,], valid_y[batch, ])},
+      .length = function() {nrow(valid_x)}
+    )()
     x <- x[-valid_idx, ]
     y <- train_y
   }
 
-  # training data
-  data <- resolve_data(x, y)
+  # training dataset
+  train_ds <-   torch::dataset(
+    initialize = function() {},
+    .getbatch = function(batch) {resolve_data(x[batch, ], y[batch, ])},
+    .length = function() {nrow(x)}
+  )()
+  # we can get training_set parameters from the 2 first samples
+  train <- train_ds$.getbatch(batch = c(1:2))
 
   # resolve loss
-  config$loss_fn <- resolve_loss(config$loss, data$y$dtype)
+  config$loss_fn <- resolve_loss(config$loss, train$y$dtype)
 
   # create network
   network <- tabnet_nn(
-    input_dim = data$input_dim,
-    output_dim = data$output_dim,
-    cat_idxs = data$cat_idx,
-    cat_dims = data$cat_dims,
+    input_dim = train$input_dim,
+    output_dim = train$output_dim,
+    cat_idxs = train$cat_idx,
+    cat_dims = train$cat_dims,
     n_d = config$n_d,
     n_a = config$n_a,
     n_steps = config$n_steps,
@@ -316,59 +382,55 @@ tabnet_initialize <- function(x, y, config = tabnet_config()) {
   )
 }
 
-tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_shift=0L) {
-  stopifnot("tabnet_model shall be initialised or pretrained"= (length(obj$fit$network) > 0))
+tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_shift = 0L) {
+  stopifnot("tabnet_model shall be initialised or pretrained" = (length(obj$fit$network) > 0))
   torch::torch_manual_seed(sample.int(1e6, 1))
+
+  device <- get_device_from_config(config)
+
+  # validation dataset & dataloaders
   has_valid <- config$valid_split > 0
-
-  if (config$device == "auto") {
-    if (torch::cuda_is_available())
-      device <- "cuda"
-    else
-      device <- "cpu"
-  } else {
-    device <- config$device
-  }
-
   if (has_valid) {
     n <- nrow(x)
     valid_idx <- sample.int(n, n*config$valid_split)
+    valid_x <- x[valid_idx, ]
+    valid_y <- y[valid_idx, ]
+    train_y <- y[-valid_idx, ]
 
-    if (is.data.frame(y)) {
-      valid_y <- y[valid_idx,]
-      train_y <- y[-valid_idx,]
-    } else if (is.numeric(y) || is.factor(y)) {
-      valid_y <- y[valid_idx]
-      train_y <- y[-valid_idx]
-    }
+    valid_ds <-   torch::dataset(
+      initialize = function() {},
+      .getbatch = function(batch) {resolve_data(valid_x[batch,], valid_y[batch,])},
+      .length = function() {nrow(valid_x)}
+    )()
 
-    valid_data <- list(x = x[valid_idx, ], y = valid_y)
+    valid_dl <- torch::dataloader(
+      valid_ds,
+      batch_size = config$batch_size,
+      shuffle = FALSE,
+      num_workers = config$num_workers
+    )
+
     x <- x[-valid_idx, ]
     y <- train_y
   }
 
-  # training data
-  data <- resolve_data(x, y)
-  dl <- torch::dataloader(
-    torch::tensor_dataset(x = data$x, y = data$y),
+  # training dataset & dataloader
+  train_ds <-   torch::dataset(
+    initialize = function() {},
+    .getbatch = function(batch) {resolve_data(x[batch,], y[batch,])},
+    .length = function() {nrow(x)}
+  )()
+
+  train_dl <- torch::dataloader(
+    train_ds,
     batch_size = config$batch_size,
     drop_last = config$drop_last,
-    shuffle = TRUE
+    shuffle = TRUE ,
+    num_workers = config$num_workers
   )
 
-  # validation data
-  if (has_valid) {
-    valid_data <- resolve_data(valid_data$x, valid_data$y)
-    valid_dl <- torch::dataloader(
-      torch::tensor_dataset(x = valid_data$x, y = valid_data$y),
-      batch_size = config$batch_size,
-      drop_last = FALSE,
-      shuffle = FALSE
-    )
-  }
-
   # resolve loss
-  config$loss_fn <- resolve_loss(config$loss, data$y$dtype)
+  config$loss_fn <- resolve_loss(config$loss, train_ds$.getbatch(batch = c(1:2))$y$dtype)
 
   # restore network from model and send it to device
   network <- obj$fit$network
@@ -402,11 +464,12 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   # restore previous metrics & checkpoints
   metrics <- obj$fit$metrics
   checkpoints <- obj$fit$checkpoints
+  patience_counter <- 0L
 
   # main loop
-  for (epoch in seq_len(config$epochs)+epoch_shift) {
+  for (epoch in seq_len(config$epochs) + epoch_shift) {
 
-    metrics[[epoch]] <- list(train = NULL, valid = NULL)
+    metrics[[epoch]] <- list()
     train_metrics <- c()
     valid_metrics <- c()
 
@@ -414,12 +477,12 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
 
     if (config$verbose)
       pb <- progress::progress_bar$new(
-        total = length(dl),
+        total = length(train_dl),
         format = "[:bar] loss= :loss"
       )
 
-    coro::loop(for (batch in dl) {
-      m <- train_batch(network, optimizer, batch_to_device(batch, device), config)
+    coro::loop(for (batch in train_dl) {
+      m <- train_batch(network, optimizer, to_device(batch, device), config)
       if (config$verbose) pb$tick(tokens = m)
       train_metrics <- c(train_metrics, m)
     })
@@ -434,7 +497,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
     network$eval()
     if (has_valid) {
       coro::loop(for (batch in valid_dl) {
-        m <- valid_batch(network, batch_to_device(batch, device), config)
+        m <- valid_batch(network, to_device(batch, device), config)
         valid_metrics <- c(valid_metrics, m)
       })
       metrics[[epoch]][["valid"]] <- transpose_metrics(valid_metrics)
@@ -447,27 +510,60 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
     if (config$verbose)
       rlang::inform(message)
 
+    # Early-stopping checks
+    if (config$early_stopping && config$early_stopping_monitor=="valid_loss"){
+      current_loss <- mean(metrics[[epoch]]$valid$loss)
+    } else {
+      current_loss <- mean(metrics[[epoch]]$train$loss)
+    }
+    if (config$early_stopping && epoch > 1+epoch_shift) {
+      # compute relative change, and compare to best_metric
+      change <- (current_loss - best_metric) / current_loss
+      if (change > config$early_stopping_tolerance){
+        patience_counter <- patience_counter + 1
+        if (patience_counter >= config$early_stopping_patience){
+          if (config$verbose)
+            rlang::inform(sprintf("Early stopping at epoch %03d", epoch))
+          break
+        }
+      } else {
+        # reset the patience counter
+        best_metric <- current_loss
+        patience_counter <- 0L
+      }
+    }
+    if (config$early_stopping && epoch == 1+epoch_shift) {
+      # initialise best_metric
+        best_metric <- current_loss
+    }
+
+
     scheduler$step()
   }
 
   network$to(device = "cpu")
-
-  importance_sample_size <- config$importance_sample_size
-  if (is.null(config$importance_sample_size) && data$x$shape[1] > 1e5) {
-    rlang::warn(c(glue::glue("Computing importances for a dataset with size {data$x$shape[1]}."),
-                "This can consume too much memory. We are going to use a sample of size 1e5",
-                "You can disable this message by using the `importance_sample_size` argument."))
-    importance_sample_size <- 1e5
+  if(!config$skip_importance) {
+    importance_sample_size <- config$importance_sample_size
+    if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
+      rlang::warn(c(glue::glue("Computing importances for a dataset with size {train_ds$.length()}."),
+                  "This can consume too much memory. We are going to use a sample of size 1e5",
+                  "You can disable this message by using the `importance_sample_size` argument."))
+      importance_sample_size <- 1e5
+    }
+    indexes <- as.numeric(torch::torch_randint(
+      1, train_ds$.length(), min(importance_sample_size, train_ds$.length()),
+      dtype = torch::torch_long()
+    ))
+    importances <- tibble::tibble(
+      variables = colnames(x),
+      importance = compute_feature_importance(
+        network,
+        train_ds$.getbatch(batch =indexes)$x$to(device = "cpu"),
+        train_ds$.getbatch(batch =indexes)$x_na_mask$to(device = "cpu"))
+    )
+  } else {
+    importances <- NULL
   }
-  indexes <- torch::torch_randint(
-    1, data$x$shape[1], min(importance_sample_size, data$x$shape[1]),
-    dtype = torch::torch_long()
-  )
-  importances <- tibble::tibble(
-    variables = colnames(x),
-    importance = compute_feature_importance(network, data$x[indexes,..])
-  )
-
   list(
     network = network,
     metrics = metrics,
@@ -478,23 +574,65 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
 }
 
 predict_impl <- function(obj, x, batch_size = 1e5) {
-  data <- resolve_data(x, y = data.frame(rep(1, nrow(x))))
+  # prediction dataset
+  device = obj$fit$config$device
+  predict_ds <-   torch::dataset(
+    initialize = function() {},
+    .getbatch = function(batch) {resolve_data(x[batch,], rep(1, nrow(x)))},
+    .length = function() {nrow(x)}
+  )()
 
   network <- obj$fit$network
+  num_workers <- obj$fit$config$num_workers
+  yhat <- c()
   network$eval()
 
-  splits <- torch::torch_split(data$x, split_size = 10000)
-  splits <- lapply(splits, function(x) network(x)[[1]])
-  torch::torch_cat(splits)
+  predict_dl <- torch::dataloader(
+    predict_ds,
+    batch_size = batch_size,
+    drop_last = FALSE,
+    shuffle = FALSE ,
+    # num_workers = num_workers
+    num_workers = 0L
+  )
+  coro::loop(for (batch in predict_dl) {
+    batch <- to_device(batch, device)
+    yhat <- c(yhat, network(batch$x, batch$x_na_mask)[[1]])
+  })
+  # bind rows of the batches
+  torch::torch_cat(yhat)
 }
 
 predict_impl_numeric <- function(obj, x, batch_size) {
-  p <- as.numeric(predict_impl(obj, x, batch_size))
-  hardhat::spruce_numeric(p)
+  p <- as.matrix(predict_impl(obj, x, batch_size))
+  hardhat::spruce_numeric(as.numeric(p))
 }
 
+predict_impl_numeric_multiple <- function(obj, x, batch_size) {
+  p <- as.matrix(predict_impl(obj, x, batch_size))
+  # TODO use a cleaner function to turn matrix into vectors
+  hardhat::spruce_numeric_multiple(!!!purrr::map(1:ncol(p), ~p[,.x]))
+}
+
+#' single-outcome level blueprint
+#'
+#' @param obj : a tabnet object
+#'
+#' @return : outcome levels
+#' @noRd
 get_blueprint_levels <- function(obj) {
   levels(obj$blueprint$ptypes$outcomes[[1]])
+}
+
+#' multi-outcome levels blueprint
+#'
+#' @param obj : a tabnet object
+#'
+#' @return : a list of levels vectors for each outcome
+#' @noRd
+get_blueprint_levels_multiple <- function(obj) {
+  purrr::map(obj$blueprint$ptypes$outcomes, levels) %>%
+    rlang::set_names(names(obj$blueprint$ptypes$outcomes))
 }
 
 predict_impl_prob <- function(obj, x, batch_size) {
@@ -504,12 +642,52 @@ predict_impl_prob <- function(obj, x, batch_size) {
   hardhat::spruce_prob(get_blueprint_levels(obj), p)
 }
 
+predict_impl_prob_multiple <- function(obj, x, batch_size, outcome_nlevels) {
+  p <- predict_impl(obj, x, batch_size)
+  p <- torch::nnf_softmax(p, dim = 2)
+  p <- as.matrix(p)
+  # TODO use a cleaner function to turn matrix into vectors
+  p_blueprint <- get_blueprint_levels_multiple(obj)
+  p_probs <- purrr::map(torch::torch_split(p, outcome_nlevels, dim = 2),
+                        as.matrix)
+  hardhat::spruce_prob_multiple(!!!purrr::pmap(
+    list(p_blueprint, p_probs),
+    # TODO BUG each element of `...` must be a tibble, not a list.
+    ~hardhat::spruce_prob(.x, .y)) %>%
+      rlang::set_names(names(p_blueprint))
+    )
+}
+
 predict_impl_class <- function(obj, x, batch_size) {
   p <- predict_impl(obj, x, batch_size)
-  p <- torch::torch_max(p, dim = 2)
-  p <- as.integer(p[[2]])
-  p <- get_blueprint_levels(obj)[p]
-  p <- factor(p, levels = get_blueprint_levels(obj))
+  p_idx <- as.integer(torch::torch_max(p, dim = 2)[[2]])
+  p_idx <- get_blueprint_levels(obj)[p_idx]
+  p <- factor(p_idx, levels = get_blueprint_levels(obj))
   hardhat::spruce_class(p)
+}
 
+predict_impl_class_multiple <- function(obj, x, batch_size, outcome_nlevels) {
+  p <- predict_impl(obj, x, batch_size)
+  p_levels <- get_blueprint_levels_multiple(obj)
+  p_idx <- purrr::map(
+    torch::torch_split(p, outcome_nlevels, dim = 2),
+    ~as.integer(torch::torch_max(.x, dim = 2)[[2]])
+    ) %>% rlang::set_names(names(p_levels))
+  p_factor_lst <- purrr::pmap(
+    list(p_idx, p_levels),
+    ~factor(.y[.x], levels = .y)
+  )
+  hardhat::spruce_class_multiple(!!!p_factor_lst)
+}
+
+to_device <- function(x, device) {
+  lapply(x, function(x) {
+    if (inherits(x, "torch_tensor")) {
+      x$to(device=device)
+    } else if (is.list(x)) {
+      lapply(x, to_device)
+    } else {
+      x
+    }
+  })
 }
