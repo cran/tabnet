@@ -1,3 +1,13 @@
+# tabnet 0.5.0
+
+## New features
+
+* {tabnet} now allows hierarchical multi-label classification through {data.tree} hierarchical `Node` dataset.  (#126) 
+* `tabnet_pretrain()` now allows different GLU blocks in GLU layers in encoder and in decoder through the `config()` parameters `num_idependant_decoder` and `num_shared_decoder` (#129) 
+* Add `reduce_on_plateau` as option for `lr_scheduler` at `tabnet_config()` (@SvenVw, #120)
+* use zeallot internally with %<-% for code readability (#133)
+* add FR translation (#131)
+
 # tabnet 0.4.0
 
 ## New features

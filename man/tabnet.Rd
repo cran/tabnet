@@ -29,7 +29,7 @@ for this model are "unknown", "regression", or "classification".}
 \item{penalty}{This is the extra sparsity loss coefficient as proposed
 in the original paper. The bigger this coefficient is, the sparser your model
 will be in terms of feature selection. Depending on the difficulty of your
-problem, reducing this value could help.}
+problem, reducing this value could help (default 1e-3).}
 
 \item{batch_size}{(int) Number of examples per batch, large batch sizes are
 recommended. (default: 1024^2)}
@@ -41,7 +41,7 @@ more capacity to the model with the risk of overfitting. Values typically
 range from 8 to 64.}
 
 \item{attention_width}{(int) Width of the attention embedding for each mask. According to
-the paper n_d=n_a is usually a good choice. (default=8)}
+the paper n_d = n_a is usually a good choice. (default=8)}
 
 \item{num_steps}{(int) Number of steps in the architecture
 (usually between 3 and 10)}
@@ -53,11 +53,11 @@ Values range from 1.0 to 2.0.}
 \item{virtual_batch_size}{(int) Size of the mini batches used for
 "Ghost Batch Normalization" (default=256^2)}
 
-\item{num_independent}{Number of independent Gated Linear Units layers at each step.
+\item{num_independent}{Number of independent Gated Linear Units layers at each step of the encoder.
 Usual values range from 1 to 5.}
 
-\item{num_shared}{Number of shared Gated Linear Units at each step Usual values
-range from 1 to 5}
+\item{num_shared}{Number of shared Gated Linear Units at each step of the encoder. Usual values
+at each step of the decoder. range from 1 to 5}
 
 \item{momentum}{Momentum for batch normalization, typically ranges from 0.01
 to 0.4 (default=0.02)}
@@ -83,7 +83,7 @@ torch::torch_set_num_interop_threads(1)
 }
 
 \examples{
-if (torch::torch_is_installed()) {
+\dontshow{if (torch::torch_is_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
 library(parsnip)
 data("ames", package = "modeldata")
 model <- tabnet() \%>\%
@@ -91,8 +91,7 @@ model <- tabnet() \%>\%
   set_engine("torch")
 model \%>\%
   fit(Sale_Price ~ ., data = ames)
-}
-
+\dontshow{\}) # examplesIf}
 }
 \seealso{
 tabnet_fit

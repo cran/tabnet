@@ -58,7 +58,7 @@ resolve_data <- function(x, y) {
 #' @param penalty This is the extra sparsity loss coefficient as proposed
 #'   in the original paper. The bigger this coefficient is, the sparser your model
 #'   will be in terms of feature selection. Depending on the difficulty of your
-#'   problem, reducing this value could help.
+#'   problem, reducing this value could help (default 1e-3).
 #' @param clip_value If a float is given this will clip the gradient at
 #'   clip_value. Pass `NULL` to not clip.
 #' @param loss (character or function) Loss function for training (default to mse
@@ -70,7 +70,7 @@ resolve_data <- function(x, y) {
 #'   more capacity to the model with the risk of overfitting. Values typically
 #'   range from 8 to 64.
 #' @param attention_width (int) Width of the attention embedding for each mask. According to
-#'   the paper n_d=n_a is usually a good choice. (default=8)
+#'   the paper n_d = n_a is usually a good choice. (default=8)
 #' @param num_steps (int) Number of steps in the architecture
 #'   (usually between 3 and 10)
 #' @param feature_reusage (float) This is the coefficient for feature reusage in the masks.
@@ -83,23 +83,31 @@ resolve_data <- function(x, y) {
 #' @param learn_rate initial learning rate for the optimizer.
 #' @param optimizer the optimization method. currently only 'adam' is supported,
 #'   you can also pass any torch optimizer function.
-#' @param valid_split (float) The fraction of the dataset used for validation.
-#' @param num_independent Number of independent Gated Linear Units layers at each step.
+#' @param valid_split (`[0, 1)`) The fraction of the dataset used for validation.
+#'   (default = 0 means no split)
+#' @param num_independent Number of independent Gated Linear Units layers at each step of the encoder.
 #'   Usual values range from 1 to 5.
-#' @param num_shared Number of shared Gated Linear Units at each step Usual values
-#'   range from 1 to 5
+#' @param num_shared Number of shared Gated Linear Units at each step of the encoder. Usual values
+#'    at each step of the decoder. range from 1 to 5
+#' @param num_independent_decoder For pretraining, number of independent Gated Linear Units layers
+#'   Usual values range from 1 to 5.
+#' @param num_shared_decoder For pretraining, number of shared Gated Linear Units at each step of the
+#'    decoder. Usual values range from 1 to 5.
 #' @param verbose (logical) Whether to print progress and loss values during
 #'   training.
-#' @param lr_scheduler if `NULL`, no learning rate decay is used. if "step"
-#'   decays the learning rate by `lr_decay` every `step_size` epochs. It can
-#'   also be a [torch::lr_scheduler] function that only takes the optimizer
+#' @param lr_scheduler if `NULL`, no learning rate decay is used. If "step"
+#'   decays the learning rate by `lr_decay` every `step_size` epochs. If "reduce_on_plateau"
+#'   decays the learning rate by `lr_decay` when no improvement after `step_size` epochs.
+#'   It can also be a [torch::lr_scheduler] function that only takes the optimizer
 #'   as parameter. The `step` method is called once per epoch.
 #' @param lr_decay multiplies the initial learning rate by `lr_decay` every
 #'   `step_size` epochs. Unused if `lr_scheduler` is a `torch::lr_scheduler`
 #'   or `NULL`.
 #' @param step_size the learning rate scheduler step size. Unused if
 #'   `lr_scheduler` is a `torch::lr_scheduler` or `NULL`.
-#' @param cat_emb_dim Embedding size for categorical features (default=1)
+#' @param cat_emb_dim Size of the embedding of categorical features. If int, all categorical
+#'   features will have same embedding size, if list of int, every corresponding feature will have
+#'   specific embedding size.
 #' @param momentum Momentum for batch normalization, typically ranges from 0.01
 #'   to 0.4 (default=0.02)
 #' @param pretraining_ratio Ratio of features to mask for reconstruction during
@@ -145,6 +153,8 @@ tabnet_config <- function(batch_size = 1024^2,
                           cat_emb_dim = 1,
                           num_independent = 2,
                           num_shared = 2,
+                          num_independent_decoder = 1,
+                          num_shared_decoder = 1,
                           momentum = 0.02,
                           pretraining_ratio = 0.5,
                           verbose = FALSE,
@@ -188,6 +198,8 @@ tabnet_config <- function(batch_size = 1024^2,
     cat_emb_dim = cat_emb_dim,
     n_independent = num_independent,
     n_shared = num_shared,
+    n_independent_decoder = num_independent_decoder,
+    n_shared_decoder = num_shared_decoder,
     momentum = momentum,
     pretraining_ratio = pretraining_ratio,
     verbose = verbose,
@@ -196,21 +208,38 @@ tabnet_config <- function(batch_size = 1024^2,
     early_stopping_monitor = resolve_early_stop_monitor(early_stopping_monitor, valid_split),
     early_stopping_tolerance = early_stopping_tolerance,
     early_stopping_patience = early_stopping_patience,
-    early_stopping = !(early_stopping_tolerance==0 || early_stopping_patience==0),
+    early_stopping = !(early_stopping_tolerance == 0 || early_stopping_patience == 0),
     num_workers = num_workers,
     skip_importance = skip_importance
   )
 }
 
-resolve_loss <- function(loss, dtype) {
+get_constr_output <- function(x, R) {
+    # MCM of the prediction given the hierarchy constraint expressed in the matrix R """
+    c_out <- x$unsqueeze(2)$expand(c(x$shape[1], R$shape[2], R$shape[2]))
+    R_batch <- R$expand(c(x$shape[1], R$shape[2], R$shape[2]))
+    final_out <- torch::torch_max(R_batch * c_out, dim = 3)
+    final_out[[1]]
+}
+
+max_constraint_output <- function(output, labels, ancestor) {
+  constr_output <-  get_constr_output(output, ancestor)
+  train_output <-  get_constr_output(labels * output, ancestor)
+  labels$bitwise_not() * constr_output + labels * train_output
+}
+
+resolve_loss <- function(config, dtype) {
+  loss <- config$loss
+
   if (is.function(loss))
     loss_fn <- loss
   else if (loss %in% c("mse", "auto") && !dtype == torch::torch_long())
     loss_fn <- torch::nn_mse_loss()
-  else if (loss %in% c("bce", "cross_entropy", "auto") && dtype == torch::torch_long())
+  else if ((loss %in% c("bce", "cross_entropy", "auto") && dtype == torch::torch_long()) || !is.null(config$ancestor_tt))
+    # cross entropy loss is required
     loss_fn <- torch::nn_cross_entropy_loss()
   else
-    rlang::abort(paste0(loss," is not a valid loss for outcome of type ",dtype))
+    stop(gettextf("`%s` is not a valid loss for outcome of type %s", loss, dtype), call. = FALSE)
 
   loss_fn
 }
@@ -221,36 +250,51 @@ resolve_early_stop_monitor <- function(early_stopping_monitor, valid_split) {
   else if (early_stopping_monitor %in% c("train_loss", "auto"))
     early_stopping_monitor <- "train_loss"
   else
-    rlang::abort(paste0(early_stopping_monitor," is not a valid early stopping metric to monitor with `valid_split`=",valid_split))
+    stop(gettextf("%s is not a valid early-stopping metric to monitor with `valid_split` = %s", early_stopping_monitor, valid_split), call. = FALSE)
 
   early_stopping_monitor
 }
 
 train_batch <- function(network, optimizer, batch, config) {
+  # NULLing values to avoid a R-CMD Check Note "No visible binding for global variable"
+  out <- M_loss <- NULL
   # forward pass
-  output <- network(batch$x, batch$x_na_mask)
-  # if target is_multi_outcome, loss has to be applied to each label-group
+  c(out, M_loss) %<-% network(batch$x, batch$x_na_mask)
+  # if target is multi-outcome, loss has to be applied to each label-group
   if (max(batch$output_dim$shape) > 1) {
-    # TODO maybe torch_stack here would help loss$backward and better to shift right torch_sum at the end ?
+    # multi-outcome
     outcome_nlevels <- as.numeric(batch$output_dim$to(device="cpu"))
-    loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
-      list(
-        torch::torch_split(output[[1]], outcome_nlevels, dim = 2),
-        torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
-      ),
-      ~config$loss_fn(.x, .y$squeeze(2))
-    )),
-    dim = 1)
+    if (!is.null(config$ancestor_tt)) {
+      # hierarchical mandates use of `max_constraint_output`
+      loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
+        list(
+          torch::torch_split(out, outcome_nlevels, dim = 2),
+          torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
+        ),
+        ~config$loss_fn(max_constraint_output(.x, .y$squeeze(2), config$ancestor_tt))
+      )),
+      dim = 1)
+    } else {
+      # use `resolved_loss`
+      loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
+        list(
+          torch::torch_split(out, outcome_nlevels, dim = 2),
+          torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
+        ),
+        ~config$loss_fn(.x, .y$squeeze(2))
+      )),
+      dim = 1)
+    }
   } else {
     if (batch$y$dtype == torch::torch_long()) {
       # classifier needs a squeeze for bce loss
-      loss <- config$loss_fn(output[[1]], batch$y$squeeze(2))
+      loss <- config$loss_fn(out, batch$y$squeeze(2))
     } else {
-      loss <- config$loss_fn(output[[1]], batch$y)
+      loss <- config$loss_fn(out, batch$y)
     }
   }
   # Add the overall sparsity loss
-  loss <- loss - config$lambda_sparse * output[[2]]
+  loss <- loss - config$lambda_sparse * M_loss
 
   # step of the optimization
   optimizer$zero_grad()
@@ -266,30 +310,45 @@ train_batch <- function(network, optimizer, batch, config) {
 }
 
 valid_batch <- function(network, batch, config) {
+  # NULLing values to avoid a R-CMD Check Note "No visible binding for global variable"
+  out <- M_loss <- NULL
   # forward pass
-  output <- network(batch$x, batch$x_na_mask)
+  c(out, M_loss) %<-% network(batch$x, batch$x_na_mask)
   # loss has to be applied to each label-group when output_dim is a vector
   if (max(batch$output_dim$shape) > 1) {
-    # TODO maybe torch_stack here would help loss$backward and better to shift right torch_sum at the end ?
+    # multi-outcome
     outcome_nlevels <- as.numeric(batch$output_dim$to(device="cpu"))
-    loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
-      list(
-        torch::torch_split(output[[1]], outcome_nlevels, dim = 2),
-        torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
-      ),
-      ~config$loss_fn(.x, .y$squeeze(2))
-    )),
-    dim = 1)
+    if (!is.null(config$ancestor_tt)) {
+      # hierarchical mandates use of `max_constraint_output`
+      loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
+        list(
+          torch::torch_split(out, outcome_nlevels, dim = 2),
+          torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
+        ),
+        ~config$loss_fn(max_constraint_output(.x, .y$squeeze(2), config$ancestor_tt))
+      )),
+      dim = 1)
+    } else {
+      # use `resolved_loss`
+      loss <- torch::torch_sum(torch::torch_stack(purrr::pmap(
+        list(
+          torch::torch_split(out, outcome_nlevels, dim = 2),
+          torch::torch_split(batch$y, rep(1, length(outcome_nlevels)), dim = 2)
+        ),
+        ~config$loss_fn(.x, .y$squeeze(2))
+      )),
+      dim = 1)
+    }
   } else {
     if (batch$y$dtype == torch::torch_long()) {
       # classifier needs a squeeze for bce loss
-      loss <- config$loss_fn(output[[1]], batch$y$squeeze(2))
+      loss <- config$loss_fn(out, batch$y$squeeze(2))
     } else {
-      loss <- config$loss_fn(output[[1]], batch$y)
+      loss <- config$loss_fn(out, batch$y)
     }
   }
   # Add the overall sparsity loss
-  loss <- loss - config$lambda_sparse * output[[2]]
+  loss <- loss - config$lambda_sparse * M_loss
 
   list(
     loss = loss$item()
@@ -320,7 +379,7 @@ tabnet_initialize <- function(x, y, config = tabnet_config()) {
 
   if (has_valid) {
     n <- nrow(x)
-    valid_idx <- sample.int(n, n*config$valid_split)
+    valid_idx <- sample.int(n, n * config$valid_split)
     valid_x <- x[valid_idx, ]
     valid_y <- y[valid_idx, ]
     train_y <- y[-valid_idx, ]
@@ -343,7 +402,7 @@ tabnet_initialize <- function(x, y, config = tabnet_config()) {
   train <- train_ds$.getbatch(batch = c(1:2))
 
   # resolve loss
-  config$loss_fn <- resolve_loss(config$loss, train$y$dtype)
+  config$loss_fn <- resolve_loss(config, train$y$dtype)
 
   # create network
   network <- tabnet_nn(
@@ -392,7 +451,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   has_valid <- config$valid_split > 0
   if (has_valid) {
     n <- nrow(x)
-    valid_idx <- sample.int(n, n*config$valid_split)
+    valid_idx <- sample.int(n, n * config$valid_split)
     valid_x <- x[valid_idx, ]
     valid_y <- y[valid_idx, ]
     train_y <- y[-valid_idx, ]
@@ -430,15 +489,18 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   )
 
   # resolve loss
-  config$loss_fn <- resolve_loss(config$loss, train_ds$.getbatch(batch = c(1:2))$y$dtype)
+  config$loss_fn <- resolve_loss(config, train_ds$.getbatch(batch = c(1:2))$y$dtype)
 
   # restore network from model and send it to device
   network <- obj$fit$network
 
   network$to(device = device)
 
+  # provide ancestor to torch tensor in case of hierarchical classification
+  if (!is.null(config$ancestor)) {
+    config$ancestor_tt <- torch::torch_tensor(config$ancestor)$to(torch::torch_bool(), device = device)
+  }
   # define optimizer
-
   if (rlang::is_function(config$optimizer)) {
 
     optimizer <- config$optimizer(network$parameters, config$learn_rate)
@@ -448,7 +510,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
     if (config$optimizer == "adam")
       optimizer <- torch::optim_adam(network$parameters, lr = config$learn_rate)
     else
-      rlang::abort("Currently only the 'adam' optimizer is supported.")
+      stop("Currently only the 'adam' optimizer is supported.", call. = FALSE)
 
   }
 
@@ -457,8 +519,12 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
     scheduler <- list(step = function() {})
   } else if (rlang::is_function(config$lr_scheduler)) {
     scheduler <- config$lr_scheduler(optimizer)
+  } else if (config$lr_scheduler == "reduce_on_plateau") {
+    scheduler <- torch::lr_reduce_on_plateau(optimizer, factor = config$lr_decay, patience = config$step_size)
   } else if (config$lr_scheduler == "step") {
     scheduler <- torch::lr_step(optimizer, config$step_size, config$lr_decay)
+  } else {
+    stop("Currently only the 'step' and 'reduce_on_plateau' scheduler are supported.", call. = FALSE)
   }
 
   # restore previous metrics & checkpoints
@@ -503,12 +569,11 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
       metrics[[epoch]][["valid"]] <- transpose_metrics(valid_metrics)
     }
 
-    message <- sprintf("[Epoch %03d] Loss: %3f", epoch, mean(metrics[[epoch]]$train$loss))
-    if (has_valid)
-      message <- paste0(message, sprintf(" Valid loss: %3f", mean(metrics[[epoch]]$valid$loss)))
+    if (config$verbose & !has_valid)
+      message(gettextf("[Epoch %03d] Loss: %3f", epoch, mean(metrics[[epoch]]$train$loss)))
+    if (config$verbose & has_valid)
+      message(gettextf("[Epoch %03d] Loss: %3f, Valid loss: %3f", epoch, mean(metrics[[epoch]]$train$loss), mean(metrics[[epoch]]$valid$loss)))
 
-    if (config$verbose)
-      rlang::inform(message)
 
     # Early-stopping checks
     if (config$early_stopping && config$early_stopping_monitor=="valid_loss"){
@@ -523,7 +588,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
         patience_counter <- patience_counter + 1
         if (patience_counter >= config$early_stopping_patience){
           if (config$verbose)
-            rlang::inform(sprintf("Early stopping at epoch %03d", epoch))
+            message(gettextf("Early stopping at epoch %03d", epoch))
           break
         }
       } else {
@@ -534,20 +599,24 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
     }
     if (config$early_stopping && epoch == 1+epoch_shift) {
       # initialise best_metric
-        best_metric <- current_loss
+      best_metric <- current_loss
     }
 
-
-    scheduler$step()
+    if ("metrics" %in% names(formals(scheduler$step))) {
+      scheduler$step(current_loss)
+    } else {
+      scheduler$step()
+    }
   }
 
   network$to(device = "cpu")
   if(!config$skip_importance) {
     importance_sample_size <- config$importance_sample_size
     if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
-      rlang::warn(c(glue::glue("Computing importances for a dataset with size {train_ds$.length()}."),
-                  "This can consume too much memory. We are going to use a sample of size 1e5",
-                  "You can disable this message by using the `importance_sample_size` argument."))
+      warning(
+        gettextf(
+          "Computing importances for a dataset with size %s. This can consume too much memory. We are going to use a sample of size 1e5, You can disable this message by using the `importance_sample_size` argument.",
+          train_ds$.length()))
       importance_sample_size <- 1e5
     }
     indexes <- as.numeric(torch::torch_randint(

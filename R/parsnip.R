@@ -223,8 +223,7 @@ add_parsnip_tabnet <- function() {
 #' @inheritSection tabnet_fit Threading
 #' @seealso tabnet_fit
 #'
-#' @examples
-#' if (torch::torch_is_installed()) {
+#' @examplesIf torch::torch_is_installed()
 #' library(parsnip)
 #' data("ames", package = "modeldata")
 #' model <- tabnet() %>%
@@ -232,7 +231,6 @@ add_parsnip_tabnet <- function() {
 #'   set_engine("torch")
 #' model %>%
 #'   fit(Sale_Price ~ ., data = ames)
-#' }
 #'
 #' @return A TabNet `parsnip` instance. It can be used to fit tabnet models using
 #' `parsnip` machinery.
@@ -244,7 +242,7 @@ tabnet <- function(mode = "unknown", epochs = NULL, penalty = NULL, batch_size =
                    num_independent = NULL, num_shared = NULL, momentum = NULL) {
 
   if (!requireNamespace("parsnip", quietly = TRUE))
-    rlang::abort("Package \"parsnip\" needed for this function to work. Please install it.")
+    stop("Package \"parsnip\" needed for this function to work. Please install it.", call. = FALSE)
 
   if (!tabnet_env$parsnip_added) {
     add_parsnip_tabnet()

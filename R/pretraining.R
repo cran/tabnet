@@ -119,6 +119,8 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
     cat_emb_dim = config$cat_emb_dim,
     n_independent = config$n_independent,
     n_shared = config$n_shared,
+    n_independent_decoder = config$n_independent_decoder,
+    n_shared_decoder = config$n_shared_decoder,
     momentum = config$momentum
   )
 
@@ -134,7 +136,7 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
     if (config$optimizer == "adam")
       optimizer <- torch::optim_adam(network$parameters, lr = config$learn_rate)
     else
-      rlang::abort("Currently only the 'adam' optimizer is supported.")
+      stop("Currently only the 'adam' optimizer is supported.", call. = FALSE)
 
   }
 
@@ -143,8 +145,12 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
     scheduler <- list(step = function() {})
   } else if (rlang::is_function(config$lr_scheduler)) {
     scheduler <- config$lr_scheduler(optimizer)
+  } else if (config$lr_scheduler == "reduce_on_plateau") {
+    scheduler <- torch::lr_reduce_on_plateau(optimizer, factor = config$lr_decay, patience = config$step_size)
   } else if (config$lr_scheduler == "step") {
     scheduler <- torch::lr_step(optimizer, config$step_size, config$lr_decay)
+  } else {
+    stop("Currently only the 'step' and 'reduce_on_plateau' scheduler are supported.", call. = FALSE)
   }
 
   # initialize metrics & checkpoints
@@ -189,12 +195,10 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
       metrics[[epoch]][["valid"]] <- transpose_metrics(valid_metrics)
     }
 
-    message <- sprintf("[Epoch %03d] Loss: %3f", epoch, mean(metrics[[epoch]]$train$loss))
-    if (has_valid)
-      message <- paste0(message, sprintf(" Valid loss: %3f", mean(metrics[[epoch]]$valid$loss)))
-
-    if (config$verbose)
-      rlang::inform(message)
+    if (config$verbose & !has_valid)
+      message(gettextf("[Epoch %03d] Loss: %3f", epoch, mean(metrics[[epoch]]$train$loss)))
+    if (config$verbose & has_valid)
+      message(gettextf("[Epoch %03d] Loss: %3f, Valid loss: %3f", epoch, mean(metrics[[epoch]]$train$loss), mean(metrics[[epoch]]$valid$loss)))
 
     # Early-stopping checks
     if (config$early_stopping && config$early_stopping_monitor=="valid_loss"){
@@ -223,17 +227,20 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
       best_metric <- current_loss
     }
 
-
-    scheduler$step()
+    if ("metrics" %in% names(formals(scheduler$step))) {
+      scheduler$step(current_loss)
+    } else {
+      scheduler$step()
+    }
   }
 
   network$to(device = "cpu")
 
   importance_sample_size <- config$importance_sample_size
   if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
-    rlang::warn(c(glue::glue("Computing importances for a dataset with size {train_ds$.length()}."),
-                  "This can consume too much memory. We are going to use a sample of size 1e5",
-                  "You can disable this message by using the `importance_sample_size` argument."))
+    warning(domain=NA,
+            gettextf("Computing importances for a dataset with size %s. This can consume too much memory. We are going to use a sample of size 1e5. You can disable this message by using the `importance_sample_size` argument.", train_ds$.length()),
+            call. = FALSE)
     importance_sample_size <- 1e5
   }
   indexes <- as.numeric(torch::torch_randint(

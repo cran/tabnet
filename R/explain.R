@@ -12,9 +12,7 @@
 #'   TabNet's paper.
 #' * `masks` a list containing the masks for each step.
 #'
-#' @examples
-#'
-#' if (torch::torch_is_installed()) {
+#' @examplesIf torch::torch_is_installed()
 #'
 #' set.seed(2021)
 #'
@@ -37,7 +35,6 @@
 #'
 #'  ex <- tabnet_explain(fit, x)
 #'
-#' }
 #'
 #' @export
 tabnet_explain <- function(object, new_data) {
@@ -47,16 +44,21 @@ tabnet_explain <- function(object, new_data) {
 #' @export
 #' @rdname tabnet_explain
 tabnet_explain.default <- function(object, new_data) {
-  stop(
-    "`tabnet_explain()` is not defined for a '", class(object)[1], "'.",
-    call. = FALSE
-  )
+  stop(domain=NA,
+       gettextf("`tabnet_explain()` is not defined for a '%s'.", class(object)[1]),
+       call. = FALSE)
 }
 
 #' @export
 #' @rdname tabnet_explain
 tabnet_explain.tabnet_fit <- function(object, new_data) {
-  processed <- hardhat::forge(new_data, object$blueprint, outcomes = FALSE)
+  if (inherits(new_data, "Node")) {
+    new_data_df <- node_to_df(new_data)$x
+  } else {
+    new_data_df <- new_data
+  }
+  # Enforces column order, type, column names, etc
+  processed <- hardhat::forge(new_data_df, object$blueprint, outcomes = FALSE)
   data <- resolve_data(processed$predictors, y = rep(1, nrow(processed$predictors)))
   device <- get_device_from_config(object$fit$config)
   data <- to_device(data, device)
@@ -92,19 +94,21 @@ explain_impl <- function(network, x, x_na_mask) {
     network$to(device = curr_device)
   })
   network$to(device=x$device)
-  outputs <- network$forward_masks(x, x_na_mask)
+  # NULLing values to avoid a R-CMD Check Note "No visible binding for global variable"
+  M_explain_emb_dim <- masks_emb_dim <- NULL
+  c(M_explain_emb_dim, masks_emb_dim) %<-% network$forward_masks(x, x_na_mask)
 
   # summarize the categorical embeddedings into 1 column
   # per variable
   M_explain <- sum_embedding_masks(
-    mask = outputs[[1]],
+    mask = M_explain_emb_dim,
     input_dim = network$input_dim,
     cat_idx = network$cat_idxs,
     cat_emb_dim = network$cat_emb_dim
   )
 
   masks <- lapply(
-    outputs[[2]],
+    masks_emb_dim,
     FUN = sum_embedding_masks,
     input_dim = network$input_dim,
     cat_idx = network$cat_idxs,

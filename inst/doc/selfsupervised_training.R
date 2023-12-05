@@ -1,4 +1,4 @@
-## ---- include = FALSE---------------------------------------------------------
+## ----include = FALSE----------------------------------------------------------
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -15,22 +15,22 @@ knitr::opts_chunk$set(
 #  set.seed(123)
 #  data("lending_club", package = "modeldata")
 #  split <- initial_split(lending_club, strata = Class, prop = 9/10)
-#  unsupervised <- training(split) %>% mutate(Class=factor(NA))
-#  supervised  <- testing(split)
+#  unlabeled <- training(split) %>% mutate(Class=factor(NA))
+#  labeled  <- testing(split)
 
 ## -----------------------------------------------------------------------------
 #  set.seed(123)
-#  supervised_split <- initial_split(supervised, strata = Class)
-#  train <- training(supervised_split)
-#  test  <- testing(supervised_split)
+#  labeled_split <- initial_split(labeled, strata = Class)
+#  train <- training(labeled_split)
+#  test  <- testing(labeled_split)
 
 ## -----------------------------------------------------------------------------
 #  rec <- recipe(Class ~ ., lending_club) %>%
 #    step_normalize(all_numeric())
-#  unsupervised_baked_df <- rec %>% prep %>% bake(new_data=unsupervised)
+#  unlabeled_baked_df <- rec %>% prep %>% bake(new_data=unlabeled)
 
 ## -----------------------------------------------------------------------------
-#  mod <- tabnet_pretrain(rec, unsupervised, epochs = 50, valid_split = 0.2, batch_size = 5000, verbose = TRUE)
+#  mod <- tabnet_pretrain(rec, unlabeled, epochs = 50, valid_split = 0.2, batch_size = 5000, verbose = TRUE)
 
 ## -----------------------------------------------------------------------------
 #  autoplot(mod)

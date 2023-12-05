@@ -6,6 +6,7 @@
 \alias{tabnet_pretrain.data.frame}
 \alias{tabnet_pretrain.formula}
 \alias{tabnet_pretrain.recipe}
+\alias{tabnet_pretrain.Node}
 \title{Tabnet model}
 \usage{
 tabnet_pretrain(x, ...)
@@ -33,6 +34,14 @@ tabnet_pretrain(x, ...)
 \method{tabnet_pretrain}{recipe}(
   x,
   data,
+  tabnet_model = NULL,
+  config = tabnet_config(),
+  ...,
+  from_epoch = NULL
+)
+
+\method{tabnet_pretrain}{Node}(
+  x,
   tabnet_model = NULL,
   config = tabnet_config(),
   ...,
@@ -116,9 +125,8 @@ torch::torch_set_num_interop_threads(1)
 }
 
 \examples{
-if (torch::torch_is_installed()) {
+\dontshow{if (torch::torch_is_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
 data("ames", package = "modeldata")
 pretrained <- tabnet_pretrain(Sale_Price ~ ., data = ames, epochs = 1)
-}
-
+\dontshow{\}) # examplesIf}
 }
