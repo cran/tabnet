@@ -1,3 +1,16 @@
+# tabnet 0.6.0
+
+## New features
+
+* parsnip models now allow transparently passing case weights through `workflows::add_case_weights()` parameters  (#151)
+* parsnip models now support `tabnet_model` and `from_epoch` parameters  (#143)
+
+## Bugfixes
+
+*  Adapt `tune::finalize_workflow()` test to {parsnip} v1.2 breaking change. (#155)
+*  `autoplot()` now position the "has_checkpoint" points correctly when a `tabnet_fit()` is continuing a previous training using `tabnet_model =`. (#150)
+*  Explicitely warn that `tabnet_model` option will not be used in `tabnet_pretrain()` tasks. (#150)
+
 # tabnet 0.5.0
 
 ## New features

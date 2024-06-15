@@ -51,7 +51,7 @@ syn2 <- make_syn2()
 syn4 <- make_syn4()
 
 ## -----------------------------------------------------------------------------
-fit_syn2 <- tabnet_fit(y ~ ., syn2, epochs = 10, verbose = TRUE)
+fit_syn2 <- tabnet_fit(y ~ ., syn2, epochs = 10, verbose = TRUE, device = "cpu")
 
 ## -----------------------------------------------------------------------------
 vip::vip(fit_syn2)
@@ -66,7 +66,7 @@ autoplot(ex_syn2)
 autoplot(ex_syn2, type="steps")
 
 ## -----------------------------------------------------------------------------
-fit_syn4 <- tabnet_fit(y ~ ., syn4, epochs = 10, verbose = TRUE)
+fit_syn4 <- tabnet_fit(y ~ ., syn4, epochs = 10, verbose = TRUE, device = "cpu")
 
 ## -----------------------------------------------------------------------------
 vip::vip(fit_syn4)

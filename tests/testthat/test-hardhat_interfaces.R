@@ -120,7 +120,6 @@ test_that("print module works even after a reload from disk", {
   withr::with_options(new = c(cli.width = 50),
                       expect_snapshot_output(fit2))
 
-
 })
 
 
@@ -128,28 +127,27 @@ test_that("num_workers works for pretrain, fit an predict", {
 
   expect_no_error(
     tabnet_pretrain(x, y, epochs = 1, num_workers=1L,
-                                batch_size=65e3, virtual_batch_size=8192)
+                    batch_size=128, virtual_batch_size=64)
   )
   expect_no_error(
     tabnet_pretrain(x, y, epochs = 1, num_workers=1L, valid_split=0.2,
-                                batch_size=65e3, virtual_batch_size=8192)
+                    batch_size=128, virtual_batch_size=64)
   )
 
   expect_no_error(
     tabnet_fit(x, y, epochs = 1, num_workers=1L,
-                      batch_size=65e3, virtual_batch_size=8192)
+               batch_size=128, virtual_batch_size=64)
   )
 
   expect_no_error(
     tabnet_fit(x, y, epochs = 1, num_workers=1L, valid_split=0.2,
-                      batch_size=65e3, virtual_batch_size=8192)
+               batch_size=128, virtual_batch_size=64)
   )
 
   expect_no_error(
     predict(ames_fit, x, num_workers=1L,
-                      batch_size=65e3, virtual_batch_size=8192)
+            batch_size=128, virtual_batch_size=64)
   )
-
 
 })
 
@@ -191,5 +189,32 @@ test_that("we can prune head of restored models from disk", {
     expect_equal(all(stringr::str_detect("final_mapping", names(pruned_pretrain$children))),FALSE)
   })
 
+})
+
+test_that("using weights raise a message", {
+
+  testthat::skip_on_ci()
+
+  # dataframe interface
+  expect_message(
+    fit <- tabnet_fit(x, y, epochs = 1, weights = 27),
+    "Configured `weights`"
+  )
+
+  # formula interface
+  expect_message(
+    fit <- tabnet_fit(Sale_Price ~ ., data = ames, epochs = 1, weights = 27),
+    "Configured `weights`"
+  )
+
+  # recipe interface
+  rec <- recipe(Attrition ~ ., data = attrition) %>%
+    step_normalize(all_numeric(), -all_outcomes())
+
+    expect_message(
+    fit <- tabnet_fit(rec, attrition[1:256,], epochs = 1, weights = "whatever"),
+    "Configured `weights`"
+  )
 
 })
+

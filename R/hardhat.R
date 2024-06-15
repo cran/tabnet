@@ -32,6 +32,7 @@
 #'  If no argument is supplied, this will use the default values in [tabnet_config()].
 #' @param from_epoch When a `tabnet_model` is provided, restore the network weights from a specific epoch.
 #'  Default is last available checkpoint for restored model, or last epoch for in-memory model.
+#' @param weights Unused.
 #' @param ... Model hyperparameters.
 #' Any hyperparameters set here will update those set by the config argument.
 #' See [tabnet_config()] for a list of all possible hyperparameters.
@@ -111,7 +112,11 @@ tabnet_fit.default <- function(x, ...) {
 
 #' @export
 #' @rdname tabnet_fit
-tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_config(), ..., from_epoch = NULL) {
+tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_config(), ...,
+                                  from_epoch = NULL, weights = NULL) {
+  if (!is.null(weights)) {
+    message(gettextf("Configured `weights` will not be used"))
+  }
   processed <- hardhat::mold(x, y)
   check_type(processed$outcomes)
 
@@ -130,7 +135,11 @@ tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_con
 
 #' @export
 #' @rdname tabnet_fit
-tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabnet_config(), ..., from_epoch = NULL) {
+tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabnet_config(), ...,
+                               from_epoch = NULL, weights = NULL) {
+  if (!is.null(weights)) {
+    message(gettextf("Configured `weights` will not be used"))
+  }
   processed <- hardhat::mold(
     formula, data,
     blueprint = hardhat::default_formula_blueprint(
@@ -155,7 +164,11 @@ tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabn
 
 #' @export
 #' @rdname tabnet_fit
-tabnet_fit.recipe <- function(x, data, tabnet_model = NULL, config = tabnet_config(), ..., from_epoch = NULL) {
+tabnet_fit.recipe <- function(x, data, tabnet_model = NULL, config = tabnet_config(), ...,
+                              from_epoch = NULL, weights = NULL) {
+  if (!is.null(weights)) {
+    message(gettextf("Configured `weights` will not be used"))
+  }
   processed <- hardhat::mold(x, data)
   check_type(processed$outcomes)
 
@@ -382,6 +395,19 @@ new_tabnet_pretrain <- function(pretrain, blueprint) {
   )
 }
 
+#' Triple dispatch on task, resume training and resume epoch
+#'
+#' Perform the triple dispatch and initialize the model (if needed) or
+#'  resume the model network weight to the right epoch
+#'
+#' @param processed the hardhat prerocessed dataset
+#' @param config the tabnet network config list of parameters
+#' @param tabnet_model the tabnet model to resume training on
+#' @param from_epoch the epoch to resume training from
+#' @param task "supervised" or "unsupervised"
+#'
+#' @return a fitted tabnet_model/tabnet_pretrain object list
+#' @noRd
 tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, from_epoch, task="supervised") {
   predictors <- processed$predictors
   outcomes <- processed$outcomes
@@ -449,6 +475,9 @@ tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, fro
 
   } else if (task == "unsupervised") {
 
+    if (!is.null(tabnet_model)) {
+      warning("`tabnet_pretrain()` from a model is not currently supported.\nThe pretraining here will start with a network initialization")
+    }
     pretrain_lst <- tabnet_train_unsupervised( predictors, config = config, epoch_shift)
     return(new_tabnet_pretrain(pretrain_lst, blueprint = processed$blueprint))
 
