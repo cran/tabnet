@@ -50,7 +50,7 @@ in the original paper. The bigger this coefficient is, the sparser your model
 will be in terms of feature selection. Depending on the difficulty of your
 problem, reducing this value could help (default 1e-3).}
 
-\item{clip_value}{If a float is given this will clip the gradient at
+\item{clip_value}{If a num is given this will clip the gradient at
 clip_value. Pass \code{NULL} to not clip.}
 
 \item{loss}{(character or function) Loss function for training (default to mse
@@ -71,9 +71,9 @@ the paper n_d = n_a is usually a good choice. (default=8)}
 \item{num_steps}{(int) Number of steps in the architecture
 (usually between 3 and 10)}
 
-\item{feature_reusage}{(float) This is the coefficient for feature reusage in the masks.
+\item{feature_reusage}{(num) This is the coefficient for feature reusage in the masks.
 A value close to 1 will make mask selection least correlated between layers.
-Values range from 1.0 to 2.0.}
+Values range from 1 to 2.}
 
 \item{mask_type}{(character) Final layer of feature selector in the attentive_transformer
 block, either \code{"sparsemax"} or \code{"entmax"}.Defaults to \code{"sparsemax"}.}
@@ -81,12 +81,12 @@ block, either \code{"sparsemax"} or \code{"entmax"}.Defaults to \code{"sparsemax
 \item{virtual_batch_size}{(int) Size of the mini batches used for
 "Ghost Batch Normalization" (default=256^2)}
 
-\item{valid_split}{(\verb{[0, 1)}) The fraction of the dataset used for validation.
+\item{valid_split}{In [0, 1). The fraction of the dataset used for validation.
 (default = 0 means no split)}
 
 \item{learn_rate}{initial learning rate for the optimizer.}
 
-\item{optimizer}{the optimization method. currently only 'adam' is supported,
+\item{optimizer}{the optimization method. currently only \code{"adam"} is supported,
 you can also pass any torch optimizer function.}
 
 \item{lr_scheduler}{if \code{NULL}, no learning rate decay is used. If "step"
@@ -156,4 +156,15 @@ A named list with all hyperparameters of the TabNet implementation.
 }
 \description{
 Configuration for TabNet models
+}
+\examples{
+\dontshow{if ((torch::torch_is_installed() && require("modeldata"))) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+data("ames", package = "modeldata")
+
+# change the model config for an faster ignite optimizer
+config <- tabnet_config(optimizer = torch::optim_ignite_adamw)
+
+## Single-outcome regression using formula specification
+fit <- tabnet_fit(Sale_Price ~ ., data = ames, epochs = 1, config = config)
+\dontshow{\}) # examplesIf}
 }

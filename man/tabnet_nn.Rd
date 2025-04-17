@@ -25,16 +25,16 @@ tabnet_nn(
 \arguments{
 \item{input_dim}{Initial number of features.}
 
-\item{output_dim}{Dimension of network output examples : one for regression, 2 for
+\item{output_dim}{Dimension of network output. Examples : one for regression, 2 for
 binary classification etc.. Vector of those dimensions in case of multi-output.}
 
-\item{n_d}{Dimension of the prediction  layer (usually between 4 and 64).}
+\item{n_d}{Dimension of the prediction layer (usually between 4 and 64).}
 
-\item{n_a}{Dimension of the attention  layer (usually between 4 and 64).}
+\item{n_a}{Dimension of the attention layer (usually between 4 and 64).}
 
 \item{n_steps}{Number of successive steps in the network (usually between 3 and 10).}
 
-\item{gamma}{Float above 1, scaling factor for attention updates (usually between 1 and 2).}
+\item{gamma}{Scaling factor for attention updates (usually between 1 and 2).}
 
 \item{cat_idxs}{Index of each categorical column in the dataset.}
 
@@ -46,13 +46,13 @@ specific size.}
 
 \item{n_independent}{Number of independent GLU layer in each GLU block of the encoder.}
 
-\item{n_shared}{Number of independent GLU layer in each GLU block of the encoder.}
+\item{n_shared}{Number of shared GLU layer in each GLU block of the encoder.}
 
 \item{epsilon}{Avoid log(0), this should be kept very low.}
 
 \item{virtual_batch_size}{Batch size for Ghost Batch Normalization.}
 
-\item{momentum}{Float value between 0 and 1 which will be used for momentum in all batch norm.}
+\item{momentum}{Numerical value between 0 and 1 which will be used for momentum in all batch norm.}
 
 \item{mask_type}{Either "sparsemax" or "entmax" : this is the masking function to use.}
 }

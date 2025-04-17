@@ -8,10 +8,14 @@
 #'   * A __matrix__ of predictors.
 #'   * A __recipe__ specifying a set of preprocessing steps
 #'     created from [recipes::recipe()].
+#'   * A __Node__ where tree will be used as hierarchical outcome,
+#'     and attributes will be used as predictors.
 #'
 #'  The predictor data should be standardized (e.g. centered or scaled).
 #'  The model treats categorical predictors internally thus, you don't need to
 #'  make any treatment.
+#'  The model treats missing values internally thus, you don't need to make any
+#'  treatment.
 #'
 #' @param y When `x` is a __data frame__ or __matrix__, `y` is the outcome
 #' specified as:
@@ -26,13 +30,13 @@
 #'
 #' @param formula A formula specifying the outcome terms on the left-hand side,
 #'  and the predictor terms on the right-hand side.
-#' @param tabnet_model A previously fitted TabNet model object to continue the fitting on.
+#' @param tabnet_model A previously fitted `tabnet_model` object to continue the fitting on.
 #'  if `NULL` (the default) a brand new model is initialized.
 #' @param config A set of hyperparameters created using the `tabnet_config` function.
 #'  If no argument is supplied, this will use the default values in [tabnet_config()].
 #' @param from_epoch When a `tabnet_model` is provided, restore the network weights from a specific epoch.
 #'  Default is last available checkpoint for restored model, or last epoch for in-memory model.
-#' @param weights Unused.
+#' @param weights Unused. Placeholder for hardhat::importance_weight() variables.
 #' @param ... Model hyperparameters.
 #' Any hyperparameters set here will update those set by the config argument.
 #' See [tabnet_config()] for a list of all possible hyperparameters.
@@ -49,7 +53,7 @@
 #' @section Multi-outcome:
 #'
 #' TabNet allows multi-outcome prediction, which is usually named [multi-label classification](https://en.wikipedia.org/wiki/Multi-label_classification)
-#'   or multi-output classification when outcomes are categorical.
+#'   or multi-output regression when outcomes are numerical.
 #' Multi-outcome currently expect outcomes to be either all numeric or all categorical.
 #'
 #' @section Threading:
@@ -64,37 +68,36 @@
 #' torch::torch_set_num_interop_threads(1)
 #' ```
 #'
-#' @examplesIf torch::torch_is_installed()
-#'
+#' @examplesIf (torch::torch_is_installed() && require("modeldata"))
+#' \dontrun{
 #' data("ames", package = "modeldata")
 #' data("attrition", package = "modeldata")
-#' ids <- sample(nrow(attrition), 256)
 #'
 #' ## Single-outcome regression using formula specification
-#' fit <- tabnet_fit(Sale_Price ~ ., data = ames, epochs = 1)
+#' fit <- tabnet_fit(Sale_Price ~ ., data = ames, epochs = 4)
 #'
 #' ## Single-outcome classification using data-frame specification
-#' attrition_x <- attrition[,-which(names(attrition) == "Attrition")]
-#' fit <- tabnet_fit(attrition_x, attrition$Attrition, epochs = 1, verbose = TRUE)
+#' attrition_x <- attrition[ids,-which(names(attrition) == "Attrition")]
+#' fit <- tabnet_fit(attrition_x, attrition$Attrition, epochs = 4, verbose = TRUE)
 #'
 #' ## Multi-outcome regression on `Sale_Price` and `Pool_Area` in `ames` dataset using formula,
-#' ames_fit <- tabnet_fit(Sale_Price + Pool_Area ~ ., data = ames[ids,], epochs = 2, valid_split = 0.2)
+#' ames_fit <- tabnet_fit(Sale_Price + Pool_Area ~ ., data = ames, epochs = 4, valid_split = 0.2)
 #'
 #' ## Multi-label classification on `Attrition` and `JobSatisfaction` in
 #' ## `attrition` dataset using recipe
 #' library(recipes)
-#' rec <- recipe(Attrition + JobSatisfaction ~ ., data = attrition[ids,]) %>%
+#' rec <- recipe(Attrition + JobSatisfaction ~ ., data = attrition) %>%
 #'   step_normalize(all_numeric(), -all_outcomes())
 #'
-#' attrition_fit <- tabnet_fit(rec, data = attrition[ids,], epochs = 2, valid_split = 0.2)
+#' attrition_fit <- tabnet_fit(rec, data = attrition, epochs = 4, valid_split = 0.2)
 #'
 #' ## Hierarchical classification on  `acme`
 #' data(acme, package = "data.tree")
 #'
-#' acme_fit <- tabnet_fit(acme, epochs = 2, verbose = TRUE)
+#' acme_fit <- tabnet_fit(acme, epochs = 4, verbose = TRUE)
 #'
-#' # Note: Dataset number of rows and model number of epochs should be increased
-#' # for publication-level results.
+#' # Note: Model's number of epochs should be increased for publication-level results.
+#' }
 #' @return A TabNet model object. It can be used for serialization, predictions, or further fitting.
 #'
 #' @export
@@ -115,7 +118,7 @@ tabnet_fit.default <- function(x, ...) {
 tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_config(), ...,
                                   from_epoch = NULL, weights = NULL) {
   if (!is.null(weights)) {
-    message(gettextf("Configured `weights` will not be used"))
+    message(gettextf("Configured `weights` variables will not be used as predictors"))
   }
   processed <- hardhat::mold(x, y)
   check_type(processed$outcomes)
@@ -138,7 +141,7 @@ tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_con
 tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabnet_config(), ...,
                                from_epoch = NULL, weights = NULL) {
   if (!is.null(weights)) {
-    message(gettextf("Configured `weights` will not be used"))
+    message(gettextf("Configured `weights` variables will not be used as predictors"))
   }
   processed <- hardhat::mold(
     formula, data,
@@ -167,7 +170,7 @@ tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabn
 tabnet_fit.recipe <- function(x, data, tabnet_model = NULL, config = tabnet_config(), ...,
                               from_epoch = NULL, weights = NULL) {
   if (!is.null(weights)) {
-    message(gettextf("Configured `weights` will not be used"))
+    message(gettextf("Configured `weights` variables will not be used as predictors"))
   }
   processed <- hardhat::mold(x, data)
   check_type(processed$outcomes)
@@ -242,10 +245,14 @@ new_tabnet_fit <- function(fit, blueprint) {
 #'   * A __matrix__ of predictors.
 #'   * A __recipe__ specifying a set of preprocessing steps
 #'     created from [recipes::recipe()].
+#'   * A __Node__ where tree leaves will be left out,
+#'     and attributes will be used as predictors.
 #'
 #'  The predictor data should be standardized (e.g. centered or scaled).
 #'  The model treats categorical predictors internally thus, you don't need to
 #'  make any treatment.
+#'  The model treats missing values internally thus, you don't need to make any
+#'  treatment.
 #'
 #' @param y (optional) When `x` is a __data frame__ or __matrix__, `y` is the outcome
 #' @param data When a __recipe__ or __formula__ is used, `data` is specified as:
@@ -254,7 +261,7 @@ new_tabnet_fit <- function(fit, blueprint) {
 #'
 #' @param formula A formula specifying the outcome terms on the left-hand side,
 #'  and the predictor terms on the right-hand side.
-#' @param tabnet_model A pretrained TabNet model object to continue the fitting on.
+#' @param tabnet_model A pretrained `tabnet_model` object to continue the fitting on.
 #'  if `NULL` (the default) a brand new model is initialized.
 #' @param config A set of hyperparameters created using the `tabnet_config` function.
 #'  If no argument is supplied, this will use the default values in [tabnet_config()].
@@ -745,6 +752,16 @@ print.tabnet_pretrain <- print.tabnet_fit
 #'
 #' @return a tabnet network with the top nn_layer removed
 #' @rdname nn_prune_head
+#' @examplesIf (torch::torch_is_installed())
+#' data("ames", package = "modeldata")
+#' x <- ames[,-which(names(ames) == "Sale_Price")]
+#' y <- ames$Sale_Price
+#' # pretrain a tabnet model on ames dataset
+#' ames_pretrain <- tabnet_pretrain(x, y, epoch = 2, checkpoint_epochs = 1)
+#' # prune classification head to get an embedding model
+#' pruned_pretrain <- torch::nn_prune_head(ames_pretrain, 1)
+#
+#' @importFrom torch nn_prune_head
 #' @export
 nn_prune_head.tabnet_fit <- function(x, head_size) {
   if (check_net_is_empty_ptr(x)) {
@@ -753,17 +770,18 @@ nn_prune_head.tabnet_fit <- function(x, head_size) {
     net <- x$fit$network
   }
   # here we assemble nn_prune_head(x, 1) with nn_prune_head(x$tabnet, 1)
-  x <- torch::nn_prune_head(net, 1)
-  x$add_module(name= "tabnet", module=torch::nn_prune_head(net$tabnet,head_size=head_size))
+  x <- nn_prune_head(net, 1)
+  x$add_module(name= "tabnet", module=nn_prune_head(net$tabnet,head_size=head_size))
 
 }
+#' @importFrom torch nn_prune_head
 #' @rdname nn_prune_head
 #' @export
 nn_prune_head.tabnet_pretrain <- function(x, head_size) {
   if (check_net_is_empty_ptr(x)) {
-    torch::nn_prune_head(reload_model(x$serialized_net), head_size=head_size)
+    nn_prune_head(reload_model(x$serialized_net), head_size=head_size)
   } else {
-    torch::nn_prune_head(x$fit$network, head_size=head_size)
+    nn_prune_head(x$fit$network, head_size=head_size)
   }
 
 }

@@ -27,8 +27,8 @@ tabnet(
   clip_value = NULL,
   drop_last = NULL,
   lr_scheduler = NULL,
-  lr_decay = NULL,
-  step_size = NULL,
+  rate_decay = NULL,
+  rate_step_size = NULL,
   checkpoint_epochs = NULL,
   verbose = NULL,
   importance_sample_size = NULL,
@@ -78,9 +78,9 @@ in the original paper. The bigger this coefficient is, the sparser your model
 will be in terms of feature selection. Depending on the difficulty of your
 problem, reducing this value could help (default 1e-3).}
 
-\item{feature_reusage}{(float) This is the coefficient for feature reusage in the masks.
+\item{feature_reusage}{(num) This is the coefficient for feature reusage in the masks.
 A value close to 1 will make mask selection least correlated between layers.
-Values range from 1.0 to 2.0.}
+Values range from 1 to 2.}
 
 \item{momentum}{Momentum for batch normalization, typically ranges from 0.01
 to 0.4 (default=0.02)}
@@ -95,13 +95,13 @@ recommended. (default: 1024^2)}
 
 \item{learn_rate}{initial learning rate for the optimizer.}
 
-\item{optimizer}{the optimization method. currently only 'adam' is supported,
+\item{optimizer}{the optimization method. currently only \code{"adam"} is supported,
 you can also pass any torch optimizer function.}
 
 \item{loss}{(character or function) Loss function for training (default to mse
 for regression and cross entropy for classification)}
 
-\item{clip_value}{If a float is given this will clip the gradient at
+\item{clip_value}{If a num is given this will clip the gradient at
 clip_value. Pass \code{NULL} to not clip.}
 
 \item{drop_last}{(logical) Whether to drop last batch if not complete during
@@ -113,11 +113,11 @@ decays the learning rate by \code{lr_decay} when no improvement after \code{step
 It can also be a \link[torch:lr_scheduler]{torch::lr_scheduler} function that only takes the optimizer
 as parameter. The \code{step} method is called once per epoch.}
 
-\item{lr_decay}{multiplies the initial learning rate by \code{lr_decay} every
-\code{step_size} epochs. Unused if \code{lr_scheduler} is a \code{torch::lr_scheduler}
+\item{rate_decay}{multiplies the initial learning rate by \code{rate_decay} every
+\code{rate_step_size} epochs. Unused if \code{lr_scheduler} is a \code{torch::lr_scheduler}
 or \code{NULL}.}
 
-\item{step_size}{the learning rate scheduler step size. Unused if
+\item{rate_step_size}{the learning rate scheduler step size. Unused if
 \code{lr_scheduler} is a \code{torch::lr_scheduler} or \code{NULL}.}
 
 \item{checkpoint_epochs}{checkpoint model weights and architecture every
@@ -140,7 +140,7 @@ display a warning.}
 
 \item{skip_importance}{if feature importance calculation should be skipped (default: \code{FALSE})}
 
-\item{tabnet_model}{A previously fitted TabNet model object to continue the fitting on.
+\item{tabnet_model}{A previously fitted \code{tabnet_model} object to continue the fitting on.
 if \code{NULL} (the default) a brand new model is initialized.}
 
 \item{from_epoch}{When a \code{tabnet_model} is provided, restore the network weights from a specific epoch.

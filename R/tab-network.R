@@ -403,22 +403,22 @@ tabnet_no_embedding <- torch::nn_module(
 #' [Attentive Interpretable Tabular Deep Learning](https://arxiv.org/abs/1908.07442).
 #'
 #' @param input_dim Initial number of features.
-#' @param output_dim Dimension of network output examples : one for regression, 2 for
+#' @param output_dim Dimension of network output. Examples : one for regression, 2 for
 #'   binary classification etc.. Vector of those dimensions in case of multi-output.
-#' @param n_d Dimension of the prediction  layer (usually between 4 and 64).
-#' @param n_a Dimension of the attention  layer (usually between 4 and 64).
+#' @param n_d Dimension of the prediction layer (usually between 4 and 64).
+#' @param n_a Dimension of the attention layer (usually between 4 and 64).
 #' @param n_steps Number of successive steps in the network (usually between 3 and 10).
-#' @param gamma Float above 1, scaling factor for attention updates (usually between 1 and 2).
+#' @param gamma Scaling factor for attention updates (usually between 1 and 2).
 #' @param cat_idxs Index of each categorical column in the dataset.
 #' @param cat_dims Number of categories in each categorical column.
 #' @param cat_emb_dim Size of the embedding of categorical features if int, all categorical
 #'   features will have same embedding size if list of int, every corresponding feature will have
 #'   specific size.
 #' @param n_independent Number of independent GLU layer in each GLU block of the encoder.
-#' @param n_shared Number of independent GLU layer in each GLU block of the encoder.
+#' @param n_shared Number of shared GLU layer in each GLU block of the encoder.
 #' @param epsilon Avoid log(0), this should be kept very low.
 #' @param virtual_batch_size Batch size for Ghost Batch Normalization.
-#' @param momentum  Float value between 0 and 1 which will be used for momentum in all batch norm.
+#' @param momentum  Numerical value between 0 and 1 which will be used for momentum in all batch norm.
 #' @param mask_type Either "sparsemax" or "entmax" : this is the masking function to use.
 #' @export
 tabnet_nn <- torch::nn_module(

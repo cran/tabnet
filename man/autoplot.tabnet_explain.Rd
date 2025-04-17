@@ -4,7 +4,12 @@
 \alias{autoplot.tabnet_explain}
 \title{Plot tabnet_explain mask importance heatmap}
 \usage{
-\method{autoplot}{tabnet_explain}(object, type = c("mask_agg", "steps"), quantile = 1, ...)
+autoplot.tabnet_explain(
+  object,
+  type = c("mask_agg", "steps"),
+  quantile = 1,
+  ...
+)
 }
 \arguments{
 \item{object}{A \code{tabnet_explain} object as a result of \code{\link[=tabnet_explain]{tabnet_explain()}}.}
@@ -25,14 +30,15 @@ A \code{ggplot} object.
 Plot tabnet_explain mask importance heatmap
 }
 \details{
-Plot the tabnet_explain object mask importance per variable along the predicted dataset.
+Plot the \code{tabnet_explain} object mask importance per variable along the predicted dataset.
 \code{type="mask_agg"} output a single heatmap of mask aggregated values,
 \code{type="steps"} provides a plot faceted along the \code{n_steps} mask present in the model.
 \code{quantile=.995} may be used for strong outlier clipping, in order to better highlight
 low values. \code{quantile=1}, the default, do not clip any values.
 }
 \examples{
-\dontshow{if (torch::torch_is_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontshow{if ((torch::torch_is_installed() && require("modeldata"))) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+ \dontrun{
 library(ggplot2)
 data("attrition", package = "modeldata")
 
@@ -44,11 +50,11 @@ autoplot(attrition_explain)
 
 ## Multi-outcome regression on `Sale_Price` and `Pool_Area` in `ames` dataset,
 data("ames", package = "modeldata")
-ids <- sample(nrow(ames), 256)
-x <- ames[ids,-which(names(ames) \%in\% c("Sale_Price", "Pool_Area"))]
-y <- ames[ids, c("Sale_Price", "Pool_Area")]
-ames_fit <- tabnet_fit(x, y, epochs = 5, verbose=TRUE)
+x <- ames[,-which(names(ames) \%in\% c("Sale_Price", "Pool_Area"))]
+y <- ames[, c("Sale_Price", "Pool_Area")]
+ames_fit <- tabnet_fit(x, y, epochs = 1, verbose=TRUE)
 ames_explain <- tabnet_explain(ames_fit, x)
 autoplot(ames_explain, quantile = 0.99)
+}
 \dontshow{\}) # examplesIf}
 }

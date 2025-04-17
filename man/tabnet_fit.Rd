@@ -58,11 +58,15 @@ tabnet_fit(x, ...)
 \item A \strong{matrix} of predictors.
 \item A \strong{recipe} specifying a set of preprocessing steps
 created from \code{\link[recipes:recipe]{recipes::recipe()}}.
+\item A \strong{Node} where tree will be used as hierarchical outcome,
+and attributes will be used as predictors.
 }
 
 The predictor data should be standardized (e.g. centered or scaled).
 The model treats categorical predictors internally thus, you don't need to
-make any treatment.}
+make any treatment.
+The model treats missing values internally thus, you don't need to make any
+treatment.}
 
 \item{...}{Model hyperparameters.
 Any hyperparameters set here will update those set by the config argument.
@@ -76,7 +80,7 @@ specified as:
 \item A \strong{vector}, either numeric or categorical.
 }}
 
-\item{tabnet_model}{A previously fitted TabNet model object to continue the fitting on.
+\item{tabnet_model}{A previously fitted \code{tabnet_model} object to continue the fitting on.
 if \code{NULL} (the default) a brand new model is initialized.}
 
 \item{config}{A set of hyperparameters created using the \code{tabnet_config} function.
@@ -85,7 +89,7 @@ If no argument is supplied, this will use the default values in \code{\link[=tab
 \item{from_epoch}{When a \code{tabnet_model} is provided, restore the network weights from a specific epoch.
 Default is last available checkpoint for restored model, or last epoch for in-memory model.}
 
-\item{weights}{Unused.}
+\item{weights}{Unused. Placeholder for hardhat::importance_weight() variables.}
 
 \item{formula}{A formula specifying the outcome terms on the left-hand side,
 and the predictor terms on the right-hand side.}
@@ -118,7 +122,7 @@ The model fitting metrics append on top of the parent metrics in the returned Ta
 
 
 TabNet allows multi-outcome prediction, which is usually named \href{https://en.wikipedia.org/wiki/Multi-label_classification}{multi-label classification}
-or multi-output classification when outcomes are categorical.
+or multi-output regression when outcomes are numerical.
 Multi-outcome currently expect outcomes to be either all numeric or all categorical.
 }
 
@@ -136,36 +140,35 @@ torch::torch_set_num_interop_threads(1)
 }
 
 \examples{
-\dontshow{if (torch::torch_is_installed()) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
-
+\dontshow{if ((torch::torch_is_installed() && require("modeldata"))) (if (getRversion() >= "3.4") withAutoprint else force)(\{ # examplesIf}
+\dontrun{
 data("ames", package = "modeldata")
 data("attrition", package = "modeldata")
-ids <- sample(nrow(attrition), 256)
 
 ## Single-outcome regression using formula specification
-fit <- tabnet_fit(Sale_Price ~ ., data = ames, epochs = 1)
+fit <- tabnet_fit(Sale_Price ~ ., data = ames, epochs = 4)
 
 ## Single-outcome classification using data-frame specification
-attrition_x <- attrition[,-which(names(attrition) == "Attrition")]
-fit <- tabnet_fit(attrition_x, attrition$Attrition, epochs = 1, verbose = TRUE)
+attrition_x <- attrition[ids,-which(names(attrition) == "Attrition")]
+fit <- tabnet_fit(attrition_x, attrition$Attrition, epochs = 4, verbose = TRUE)
 
 ## Multi-outcome regression on `Sale_Price` and `Pool_Area` in `ames` dataset using formula,
-ames_fit <- tabnet_fit(Sale_Price + Pool_Area ~ ., data = ames[ids,], epochs = 2, valid_split = 0.2)
+ames_fit <- tabnet_fit(Sale_Price + Pool_Area ~ ., data = ames, epochs = 4, valid_split = 0.2)
 
 ## Multi-label classification on `Attrition` and `JobSatisfaction` in
 ## `attrition` dataset using recipe
 library(recipes)
-rec <- recipe(Attrition + JobSatisfaction ~ ., data = attrition[ids,]) \%>\%
+rec <- recipe(Attrition + JobSatisfaction ~ ., data = attrition) \%>\%
   step_normalize(all_numeric(), -all_outcomes())
 
-attrition_fit <- tabnet_fit(rec, data = attrition[ids,], epochs = 2, valid_split = 0.2)
+attrition_fit <- tabnet_fit(rec, data = attrition, epochs = 4, valid_split = 0.2)
 
 ## Hierarchical classification on  `acme`
 data(acme, package = "data.tree")
 
-acme_fit <- tabnet_fit(acme, epochs = 2, verbose = TRUE)
+acme_fit <- tabnet_fit(acme, epochs = 4, verbose = TRUE)
 
-# Note: Dataset number of rows and model number of epochs should be increased
-# for publication-level results.
+# Note: Model's number of epochs should be increased for publication-level results.
+}
 \dontshow{\}) # examplesIf}
 }

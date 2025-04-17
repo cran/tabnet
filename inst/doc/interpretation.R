@@ -12,7 +12,8 @@ knitr::opts_chunk$set(
 library(tabnet)
 library(tidyverse, warn.conflicts = FALSE)
 set.seed(1)
-torch::torch_manual_seed(1)
+# You may want to add this for complete reproducibility
+# torch::torch_manual_seed(1)
 
 ## -----------------------------------------------------------------------------
 logit_to_y <- function(logits) {

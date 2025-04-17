@@ -1,0 +1,23 @@
+Original, Translation
+fit, entraînement
+Training, Apprentissage
+Learning, Apprentissage
+Validation, Validation
+Evaluation, Évaluation
+Early-stopping, arrêt précoce
+fitting, ajustement
+epoch, époque
+device, périphérique `device`
+range, plage de valeurs
+fine-tuning, ~
+dataframe, data-frame
+predictor, variable predictive
+target, variable à prédire
+target/outcome, variable à prédire/variable cible/ variable de résultat
+steps, step de l'architecture(tabnet)
+snapshot, instantanné
+checkpoint, instantanné du modèle
+multi-label, multi-valuée/multi-variée/multi-label
+embedding, ~
+batch, lot
+threads, ~

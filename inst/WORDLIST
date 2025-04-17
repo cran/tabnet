@@ -15,7 +15,6 @@ Pretrain
 Sercan
 TabNet
 TabNet's
-adam
 ai
 al
 ames
@@ -28,6 +27,7 @@ cpu
 cuda
 dataloading
 detailled
+doi
 dreamquark
 entmax
 et
@@ -36,6 +36,7 @@ ggplot
 interpretable
 mse
 nn
+num
 orginal
 overfit
 overfits
@@ -47,5 +48,7 @@ reusage
 sparsemax
 subprocesses
 th
+tibble
 tidymodels
+tunable
 zeallot
