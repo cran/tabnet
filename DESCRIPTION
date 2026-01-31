@@ -1,6 +1,6 @@
 Package: tabnet
 Title: Fit 'TabNet' Models for Classification and Regression
-Version: 0.7.0
+Version: 0.8.0
 Authors@R: c(
     person("Daniel", "Falbel", , "daniel@rstudio.com", role = "aut"),
     person(, "RStudio", role = "cph"),
@@ -24,24 +24,24 @@ Imports: coro, data.tree, dials, dplyr, ggplot2, hardhat (>= 1.3.0),
         magrittr, Matrix, methods, parsnip, progress, purrr, rlang,
         stats, stringr, tibble, tidyr, torch (>= 0.4.0), tune, utils,
         vctrs, withr, zeallot
-Suggests: cli, knitr, modeldata, patchwork, recipes, rmarkdown,
+Suggests: cli, knitr, modeldata, patchwork, quarto, recipes, rmarkdown,
         rsample, spelling, testthat (>= 3.0.0), tidymodels, tidyverse,
-        vip, visdat, workflows, yardstick
+        vip, visdat, workflows, xgboost, yardstick
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 Config/testthat/parallel: false
 Config/testthat/start-first: interface, explain, params
 Encoding: UTF-8
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 Language: en-US
 NeedsCompilation: no
-Packaged: 2025-04-16 22:08:41 UTC; creg
+Packaged: 2026-01-31 15:01:51 UTC; creg
 Author: Daniel Falbel [aut],
   RStudio [cph],
   Christophe Regouby [cre, ctb],
   Egill Fridgeirsson [ctb],
   Philipp Haarmeyer [ctb],
-  Sven Verweij [ctb] (<https://orcid.org/0000-0002-5573-3952>)
+  Sven Verweij [ctb] (ORCID: <https://orcid.org/0000-0002-5573-3952>)
 Maintainer: Christophe Regouby <christophe.regouby@free.fr>
 Repository: CRAN
-Date/Publication: 2025-04-17 00:10:02 UTC
+Date/Publication: 2026-01-31 15:40:02 UTC

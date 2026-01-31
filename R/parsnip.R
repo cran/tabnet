@@ -128,6 +128,15 @@ add_parsnip_tabnet <- function() {
   parsnip::set_model_arg(
     model = "tabnet",
     eng = "torch",
+    parsnip = "mask_topk",
+    original = "mask_topk",
+    func = list(pkg = "tabnet", fun = "mask_topk"),
+    has_submodel = FALSE
+  )
+  
+  parsnip::set_model_arg(
+    model = "tabnet",
+    eng = "torch",
     parsnip = "mlp_hidden_multiplier",
     original = "mlp_hidden_multiplier",
     func = list(pkg = "tabnet", fun = "mlp_hidden_multiplier"),
@@ -450,7 +459,7 @@ add_parsnip_tabnet <- function() {
 #'
 #' @export
 tabnet <- function(mode = "unknown",  cat_emb_dim = NULL, decision_width = NULL, attention_width = NULL,
-                   num_steps = NULL, mask_type = NULL, num_independent = NULL, num_shared = NULL,
+                   num_steps = NULL, mask_type = NULL, mask_topk = NULL, num_independent = NULL, num_shared = NULL,
                    num_independent_decoder = NULL, num_shared_decoder = NULL, penalty = NULL,
                    feature_reusage = NULL, momentum = NULL, epochs = NULL, batch_size = NULL,
                    virtual_batch_size = NULL, learn_rate = NULL, optimizer = NULL, loss = NULL,
@@ -462,8 +471,8 @@ tabnet <- function(mode = "unknown",  cat_emb_dim = NULL, decision_width = NULL,
                    ) {
 
   if (!requireNamespace("parsnip", quietly = TRUE))
-    stop("Package \"parsnip\" needed for this function to work. Please install it.", call. = FALSE)
-
+    runtime_error("Package {.pkg parsnip} is needed for this function to work. Please install it.")
+  
   if (parsnip_is_missing_tabnet(tabnet_env)) {
     add_parsnip_tabnet()
     tabnet_env$parsnip_added <- TRUE
@@ -477,6 +486,7 @@ tabnet <- function(mode = "unknown",  cat_emb_dim = NULL, decision_width = NULL,
     attention_width = rlang::enquo(attention_width),
     num_steps = rlang::enquo(num_steps),
     mask_type = rlang::enquo(mask_type),
+    mask_topk = rlang::enquo(mask_topk),
     num_independent = rlang::enquo(num_independent),
     num_shared = rlang::enquo(num_shared),
     num_independent_decoder = rlang::enquo(num_independent_decoder),
@@ -587,7 +597,7 @@ update.tabnet <- function(object, parameters = NULL, epochs = NULL, penalty = NU
 #' @return A tibble with the minimum tuning parameters to fit and an additional
 #' list column with the parameter combinations used for prediction.
 #' @keywords internal
-#' @examples
+#' @examplesIf torch::torch_is_installed()
 #' library(dials)
 #' library(tune)
 #' library(parsnip)

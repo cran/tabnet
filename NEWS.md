@@ -1,3 +1,21 @@
+# tabnet 0.8.0
+
+## New features
+
+* messaging is now improved with {cli} 
+* add optimal threshold and support size into new 1.5 alpha `entmax15()` and `sparsemax15()`
+  `mask_types`. Add an optional `mask_topk` config parameter. (#180)
+* `optimizer`now default to the `torch_ignite_adam`  when available.
+  Result is 30% faster pretraining and fitting tasks (#178).
+* add `nn_aum_loss()` function for area under the $Min(FPR,FNR)$ optimization for cases of 
+  unbalanced binary classification (#178).
+* add a vignette on imbalanced binary classification with `nn_aum_loss()` (#178).
+
+## Bugfixes
+
+* config parameter now merge correctly for torch loss or torch optimizer generator.
+* `nn_unsupervised_loss()` is now a proper loss function.
+
 # tabnet 0.7.0
 
 ## Bugfixes

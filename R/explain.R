@@ -44,9 +44,7 @@ tabnet_explain <- function(object, new_data) {
 #' @export
 #' @rdname tabnet_explain
 tabnet_explain.default <- function(object, new_data) {
-  stop(domain=NA,
-       gettextf("`tabnet_explain()` is not defined for a '%s'.", class(object)[1]),
-       call. = FALSE)
+  type_error("{.fn tabnet_explain} is not defined for a {.type {class(object)[1]}}.")
 }
 
 #' @export
@@ -94,7 +92,7 @@ explain_impl <- function(network, x, x_na_mask) {
     network$to(device = curr_device)
   })
   network$to(device=x$device)
-  # NULLing values to avoid a R-CMD Check Note "No visible binding for global variable"
+  # NULLing values to avoid a R-CMD Check Note
   M_explain_emb_dim <- masks_emb_dim <- NULL
   c(M_explain_emb_dim, masks_emb_dim) %<-% network$forward_masks(x, x_na_mask)
 
@@ -120,7 +118,7 @@ explain_impl <- function(network, x, x_na_mask) {
 
 compute_feature_importance <- function(network, x, x_na_mask) {
   out <- explain_impl(network, x, x_na_mask)
-  m <- as.numeric(as.matrix(out$M_explain$sum(dim = 1)$detach()$to(device = "cpu")))
+  m <- as.numeric(out$M_explain$sum(dim = 1)$detach()$to(device = "cpu"))
   m/sum(m)
 }
 

@@ -43,20 +43,6 @@ transpose_metrics <- function(metrics) {
   out[-1]
 }
 
-unsupervised_loss <- function(y_pred, embedded_x, obfuscation_mask, eps = 1e-9) {
-
-  errors <- y_pred - embedded_x
-  reconstruction_errors <- torch::torch_mul(errors, obfuscation_mask)^2
-  batch_stds <- torch::torch_std(embedded_x, dim=1)^2 + eps
-
-  # compute the number of obfuscated variables to reconstruct
-  nb_reconstructed_variables <- torch::torch_sum(obfuscation_mask, dim=2)
-
-  # take the mean of the reconstructed variable errors
-  features_loss <- torch::torch_matmul(reconstruction_errors, 1/batch_stds) / (nb_reconstructed_variables + eps)
-  loss <- torch::torch_mean(features_loss)
-  loss
-}
 
 tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift = 0L) {
   torch::torch_manual_seed(sample.int(1e6, 1))
@@ -103,7 +89,7 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
   )
 
   # resolve loss (shortcutted from config)
-  config$loss_fn <- unsupervised_loss
+  config$loss_fn <- nn_unsupervised_loss()
 
   # create network
   network <- tabnet_pretrainer(
@@ -121,24 +107,20 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
     n_shared = config$n_shared,
     n_independent_decoder = config$n_independent_decoder,
     n_shared_decoder = config$n_shared_decoder,
-    momentum = config$momentum
+    momentum = config$momentum,
+    mask_type = config$mask_type,
+    mask_topk = config$mask_topk
   )
 
   network$to(device = device)
 
-  # define optimizer
-  if (rlang::is_function(config$optimizer)) {
-
+  # instantiate optimizer
+  if (is_optim_generator(config$optimizer)) {
     optimizer <- config$optimizer(network$parameters, config$learn_rate)
-
-  } else if (rlang::is_scalar_character(config$optimizer)) {
-
-    if (config$optimizer == "adam")
-      optimizer <- torch::optim_adam(network$parameters, lr = config$learn_rate)
-    else
-      stop("Currently only the 'adam' optimizer is supported.", call. = FALSE)
-
+  } else {
+    type_error("{.var optimizer} must be resolved into a torch optimizer generator.")
   }
+  
 
   # define scheduler
   if (is.null(config$lr_scheduler)) {
@@ -150,7 +132,7 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
   } else if (config$lr_scheduler == "step") {
     scheduler <- torch::lr_step(optimizer, config$step_size, config$lr_decay)
   } else {
-    stop("Currently only the 'step' and 'reduce_on_plateau' scheduler are supported.", call. = FALSE)
+    not_implemented_error("Currently only the {.str step} and {.str reduce_on_plateau} scheduler are supported.", call. = FALSE)
   }
 
   # initialize metrics & checkpoints
@@ -214,7 +196,7 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
         patience_counter <- patience_counter + 1
         if (patience_counter >= config$early_stopping_patience) {
           if (config$verbose)
-            rlang::inform(sprintf("Early stopping at epoch %03d", epoch))
+            cli::cli_alert_success(gettextf("Early-stopping at epoch {.val epoch}"))
           break
         }
       } else {
@@ -236,26 +218,28 @@ tabnet_train_unsupervised <- function(x, config = tabnet_config(), epoch_shift =
   }
 
   network$to(device = "cpu")
-
-  importance_sample_size <- config$importance_sample_size
-  if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
-    warning(domain=NA,
-            gettextf("Computing importances for a dataset with size %s. This can consume too much memory. We are going to use a sample of size 1e5. You can disable this message by using the `importance_sample_size` argument.", train_ds$.length()),
-            call. = FALSE)
-    importance_sample_size <- 1e5
-  }
-  indexes <- as.numeric(torch::torch_randint(
-    1, train_ds$.length(), min(importance_sample_size, train_ds$.length()),
-    dtype = torch::torch_long()
-  ))
-  importances <- tibble::tibble(
-    variables = colnames(x),
-    importance = compute_feature_importance(
-      network,
-      train_ds$.getbatch(batch =indexes)$x$to(device = "cpu"),
-      train_ds$.getbatch(batch =indexes)$x_na_mask$to(device = "cpu")
+  if(!config$skip_importance) {
+    importance_sample_size <- config$importance_sample_size
+    if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
+      warn("Computing importances for a dataset with size {.val {train_ds$.length()}}. 
+           This can consume too much memory. We are going to use a sample of size 1e5. 
+           You can disable this message by using the `importance_sample_size` argument.")
+      importance_sample_size <- 1e5
+    }
+    indexes <- as.numeric(torch::torch_randint(
+      1, train_ds$.length(), min(importance_sample_size, train_ds$.length()),
+      dtype = torch::torch_long()
+    ))
+    importances <- tibble::tibble(
+      variables = colnames(x),
+      importance = compute_feature_importance(
+        network,
+        train_ds$.getbatch(batch =indexes)$x$to(device = "cpu"),
+        train_ds$.getbatch(batch =indexes)$x_na_mask$to(device = "cpu"))
     )
-  )
+  } else {
+    importances <- NULL
+  }
 
   list(
     network = network,

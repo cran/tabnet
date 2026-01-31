@@ -77,7 +77,8 @@ resolve_data <- function(x, y) {
 #'   A value close to 1 will make mask selection least correlated between layers.
 #'   Values range from 1 to 2.
 #' @param mask_type (character) Final layer of feature selector in the attentive_transformer
-#'   block, either `"sparsemax"` or `"entmax"`.Defaults to `"sparsemax"`.
+#'   block, either `"sparsemax"`, `"entmax"` or `"entmax15"`.Defaults to `"sparsemax"`.
+#' @param mask_topk (int) mask sparsity top-k for `sparsemax15` and `entmax15.` See [entmax15()] for detail.
 #' @param virtual_batch_size (int) Size of the mini batches used for
 #'   "Ghost Batch Normalization" (default=256^2)
 #' @param learn_rate initial learning rate for the optimizer.
@@ -151,6 +152,7 @@ tabnet_config <- function(batch_size = 1024^2,
                           num_steps = 3,
                           feature_reusage = 1.3,
                           mask_type = "sparsemax",
+                          mask_topk = NULL,
                           virtual_batch_size = 256^2,
                           valid_split = 0,
                           learn_rate = 2e-2,
@@ -196,10 +198,11 @@ tabnet_config <- function(batch_size = 1024^2,
     n_steps = num_steps,
     gamma = feature_reusage,
     mask_type = mask_type,
+    mask_topk = mask_topk,
     virtual_batch_size = virtual_batch_size,
     valid_split = valid_split,
     learn_rate = learn_rate,
-    optimizer = optimizer,
+    optimizer = resolve_optimizer(optimizer),
     lr_scheduler = lr_scheduler,
     lr_decay = lr_decay,
     step_size = step_size,
@@ -240,7 +243,9 @@ max_constraint_output <- function(output, labels, ancestor) {
 resolve_loss <- function(config, dtype) {
   loss <- config$loss
 
-  if (is.function(loss))
+  if (is_loss_generator(loss))
+    loss_fn <- loss()
+  else if (is.function(loss))
     loss_fn <- loss
   else if (loss %in% c("mse", "auto") && !dtype == torch::torch_long())
     loss_fn <- torch::nn_mse_loss()
@@ -248,7 +253,7 @@ resolve_loss <- function(config, dtype) {
     # cross entropy loss is required
     loss_fn <- torch::nn_cross_entropy_loss()
   else
-    stop(gettextf("`%s` is not a valid loss for outcome of type %s", loss, dtype), call. = FALSE)
+    value_error("{.val {loss}} is not a valid loss for outcome of type {.type {dtype}}")
 
   loss_fn
 }
@@ -259,7 +264,7 @@ resolve_early_stop_monitor <- function(early_stopping_monitor, valid_split) {
   else if (early_stopping_monitor %in% c("train_loss", "auto"))
     early_stopping_monitor <- "train_loss"
   else
-    stop(gettextf("%s is not a valid early-stopping metric to monitor with `valid_split` = %s", early_stopping_monitor, valid_split), call. = FALSE)
+    value_error("{.val {early_stopping_monitor}} is not a valid early-stopping metric to monitor with {.val valid_split = {valid_split}}")
 
   early_stopping_monitor
 }
@@ -428,7 +433,8 @@ tabnet_initialize <- function(x, y, config = tabnet_config()) {
     n_independent = config$n_independent,
     n_shared = config$n_shared,
     momentum = config$momentum,
-    mask_type = config$mask_type
+    mask_type = config$mask_type,
+    mask_topk = config$mask_topk
   )
 
   # main loop
@@ -509,18 +515,12 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   if (!is.null(config$ancestor)) {
     config$ancestor_tt <- torch::torch_tensor(config$ancestor)$to(torch::torch_bool(), device = device)
   }
-  # define optimizer
-  if (rlang::is_function(config$optimizer)) {
 
+  # instantiate optimizer
+  if (is_optim_generator(config$optimizer)) {
     optimizer <- config$optimizer(network$parameters, config$learn_rate)
-
-  } else if (rlang::is_scalar_character(config$optimizer)) {
-
-    if (config$optimizer == "adam")
-      optimizer <- torch::optim_adam(network$parameters, lr = config$learn_rate)
-    else
-      stop("Currently only the 'adam' optimizer is supported.", call. = FALSE)
-
+  } else {
+    type_error("{.var optimizer} must be resolved into a torch optimizer generator.")
   }
 
   # define scheduler
@@ -533,7 +533,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   } else if (config$lr_scheduler == "step") {
     scheduler <- torch::lr_step(optimizer, config$step_size, config$lr_decay)
   } else {
-    stop("Currently only the 'step' and 'reduce_on_plateau' scheduler are supported.", call. = FALSE)
+    not_implemented_error("Currently only the {.str step} and {.str reduce_on_plateau} scheduler are supported.", call. = FALSE)
   }
 
   # restore previous metrics & checkpoints
@@ -598,7 +598,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
         patience_counter <- patience_counter + 1
         if (patience_counter >= config$early_stopping_patience){
           if (config$verbose)
-            message(gettextf("Early stopping at epoch %03d", epoch))
+            cli::cli_alert_success(gettextf("Early-stopping at epoch {.val epoch}"))
           break
         }
       } else {
@@ -623,10 +623,9 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   if(!config$skip_importance) {
     importance_sample_size <- config$importance_sample_size
     if (is.null(config$importance_sample_size) && train_ds$.length() > 1e5) {
-      warning(
-        gettextf(
-          "Computing importances for a dataset with size %s. This can consume too much memory. We are going to use a sample of size 1e5, You can disable this message by using the `importance_sample_size` argument.",
-          train_ds$.length()))
+      warn("Computing importances for a dataset with size {.val {train_ds$.length()}}. 
+           This can consume too much memory. We are going to use a sample of size 1e5. 
+           You can disable this message by using the `importance_sample_size` argument.")
       importance_sample_size <- 1e5
     }
     indexes <- as.numeric(torch::torch_randint(
@@ -643,6 +642,7 @@ tabnet_train_supervised <- function(obj, x, y, config = tabnet_config(), epoch_s
   } else {
     importances <- NULL
   }
+  
   list(
     network = network,
     metrics = metrics,
@@ -757,16 +757,4 @@ predict_impl_class_multiple <- function(obj, x, batch_size, outcome_nlevels) {
     ~factor(.y[.x], levels = .y)
   )
   hardhat::spruce_class_multiple(!!!p_factor_lst)
-}
-
-to_device <- function(x, device) {
-  lapply(x, function(x) {
-    if (inherits(x, "torch_tensor")) {
-      x$to(device=device)
-    } else if (is.list(x)) {
-      lapply(x, to_device)
-    } else {
-      x
-    }
-  })
 }

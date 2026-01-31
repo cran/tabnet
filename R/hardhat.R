@@ -108,31 +108,17 @@ tabnet_fit <- function(x, ...) {
 #' @export
 #' @rdname tabnet_fit
 tabnet_fit.default <- function(x, ...) {
-  stop(domain=NA,
-       gettextf("`tabnet_fit()` is not defined for a '%s'.", class(x)[1]),
-       call. = FALSE)
+  type_error("{.fn tabnet_fit} is not defined for a {.type {class(x)[1])}}.")
 }
 
 #' @export
 #' @rdname tabnet_fit
 tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_config(), ...,
                                   from_epoch = NULL, weights = NULL) {
-  if (!is.null(weights)) {
-    message(gettextf("Configured `weights` variables will not be used as predictors"))
-  }
   processed <- hardhat::mold(x, y)
   check_type(processed$outcomes)
 
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-    function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-    default_config,
-    new_config)
-    ]
-  config <- utils::modifyList(config, as.list(new_config))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "supervised")
 }
 
@@ -140,9 +126,6 @@ tabnet_fit.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_con
 #' @rdname tabnet_fit
 tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabnet_config(), ...,
                                from_epoch = NULL, weights = NULL) {
-  if (!is.null(weights)) {
-    message(gettextf("Configured `weights` variables will not be used as predictors"))
-  }
   processed <- hardhat::mold(
     formula, data,
     blueprint = hardhat::default_formula_blueprint(
@@ -152,16 +135,7 @@ tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabn
   )
   check_type(processed$outcomes)
 
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-      function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-      default_config,
-      new_config)
-  ]
-  config <- utils::modifyList(config, as.list(new_config))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "supervised")
 }
 
@@ -169,22 +143,10 @@ tabnet_fit.formula <- function(formula, data, tabnet_model = NULL, config = tabn
 #' @rdname tabnet_fit
 tabnet_fit.recipe <- function(x, data, tabnet_model = NULL, config = tabnet_config(), ...,
                               from_epoch = NULL, weights = NULL) {
-  if (!is.null(weights)) {
-    message(gettextf("Configured `weights` variables will not be used as predictors"))
-  }
   processed <- hardhat::mold(x, data)
   check_type(processed$outcomes)
 
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-      function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-      default_config,
-      new_config)
-  ]
-  config <- utils::modifyList(config, as.list(new_config))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "supervised")
 }
 
@@ -209,16 +171,7 @@ tabnet_fit.Node <- function(x, tabnet_model = NULL, config = tabnet_config(), ..
   ancestor_m <- Matrix::sparseMatrix(ancestor$from, ancestor$to, dims = dims, x = 1)
   check_type(processed$outcomes)
 
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-      function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-      default_config,
-      new_config)
-  ]
-  config <- utils::modifyList(config, as.list(new_config, ancestor = ancestor_m))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "supervised")
 }
 
@@ -312,9 +265,7 @@ tabnet_pretrain <- function(x, ...) {
 #' @export
 #' @rdname tabnet_pretrain
 tabnet_pretrain.default <- function(x, ...) {
-  stop(domain=NA,
-       gettextf("`tabnet_pretrain()` is not defined for a '%s'.", class(x)[1]),
-       call. = FALSE)
+  type_error("{.fn tabnet_pretrain} is not defined for a {.type {class(x)[1])}}.")
 }
 
 
@@ -324,16 +275,7 @@ tabnet_pretrain.default <- function(x, ...) {
 tabnet_pretrain.data.frame <- function(x, y, tabnet_model = NULL, config = tabnet_config(), ..., from_epoch = NULL) {
   processed <- hardhat::mold(x, y)
 
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-      function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-      default_config,
-      new_config)
-  ]
-  config <- utils::modifyList(config, as.list(new_config))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "unsupervised")
 }
 
@@ -347,17 +289,7 @@ tabnet_pretrain.formula <- function(formula, data, tabnet_model = NULL, config =
       intercept = FALSE
     )
   )
-
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-      function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-      default_config,
-      new_config)
-  ]
-  config <- utils::modifyList(config, as.list(new_config))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "unsupervised")
 }
 
@@ -366,16 +298,7 @@ tabnet_pretrain.formula <- function(formula, data, tabnet_model = NULL, config =
 tabnet_pretrain.recipe <- function(x, data, tabnet_model = NULL, config = tabnet_config(), ..., from_epoch = NULL) {
   processed <- hardhat::mold(x, data)
 
-  default_config <- tabnet_config()
-  new_config <- do.call(tabnet_config, list(...))
-  new_config <- new_config[
-    mapply(
-      function(x, y) ifelse(is.null(x), !is.null(y), x != y),
-      default_config,
-      new_config)
-  ]
-  config <- utils::modifyList(config, as.list(new_config))
-
+  config <- merge_config_and_dots(config, ...)
   tabnet_bridge(processed, config = config, tabnet_model, from_epoch, task = "unsupervised")
 }
 
@@ -421,14 +344,13 @@ tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, fro
   epoch_shift <- 0L
 
   if (!(is.null(tabnet_model) || inherits(tabnet_model, "tabnet_fit") || inherits(tabnet_model, "tabnet_pretrain")))
-    stop(gettextf("'%s' is not recognised as a proper TabNet model", tabnet_model),
-         call. = FALSE)
+    type_error("{.var {tabnet_model}} is not recognised as a proper TabNet model")
 
   if (!is.null(from_epoch) && !is.null(tabnet_model)) {
     # model must be loaded from checkpoint
 
     if (from_epoch > (length(tabnet_model$fit$checkpoints) * tabnet_model$fit$config$checkpoint_epoch))
-      stop(gettextf("The model was trained for less than '%s' epochs", from_epoch), call. = FALSE)
+      value_error("The model was trained for less than {.val {from_epoch}} epochs")
 
     # find closest checkpoint for that epoch
     closest_checkpoint <- from_epoch %/% tabnet_model$fit$config$checkpoint_epoch
@@ -440,7 +362,7 @@ tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, fro
   }
   if (task == "supervised") {
     if (sum(is.na(outcomes)) > 0) {
-      stop(gettextf("Found missing values in the `%s` outcome column.", names(outcomes)), call. = FALSE)
+      value_error("Found missing values in the {.var {names(outcomes)}} outcome column.")
     }
     if (is.null(tabnet_model)) {
       # new supervised model needs network initialization
@@ -450,7 +372,7 @@ tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, fro
     } else if (!check_net_is_empty_ptr(tabnet_model) && inherits(tabnet_model, "tabnet_fit")) {
       # resume training from supervised
       if (!identical(processed$blueprint, tabnet_model$blueprint))
-        stop("Model dimensions don't match.", call. = FALSE)
+        runtime_error("Model dimensions don't match.")
 
       # model is available from tabnet_model$serialized_net
       m <- reload_model(tabnet_model$serialized_net)
@@ -475,7 +397,7 @@ tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, fro
       tabnet_model$fit$network <- reload_model(tabnet_model$fit$checkpoints[[last_checkpoint]])
       epoch_shift <- last_checkpoint * tabnet_model$fit$config$checkpoint_epoch
 
-    } else stop(gettextf("No model serialized weight can be found in `%s`, check the model history", tabnet_model), call. = FALSE)
+    } else runtime_error("No model serialized weight can be found in {.var {tabnet_model}}, check the model history")
 
     fit_lst <- tabnet_train_supervised(tabnet_model, predictors, outcomes, config = config, epoch_shift)
     return(new_tabnet_fit(fit_lst, blueprint = processed$blueprint))
@@ -483,7 +405,8 @@ tabnet_bridge <- function(processed, config = tabnet_config(), tabnet_model, fro
   } else if (task == "unsupervised") {
 
     if (!is.null(tabnet_model)) {
-      warning("`tabnet_pretrain()` from a model is not currently supported.\nThe pretraining here will start with a network initialization")
+      warn("Using {.fn tabnet_pretrain} from a model is not currently supported.",
+           "Pretraining will start from a new network initialization")
     }
     pretrain_lst <- tabnet_train_unsupervised( predictors, config = config, epoch_shift)
     return(new_tabnet_pretrain(pretrain_lst, blueprint = processed$blueprint))
@@ -520,7 +443,7 @@ predict_tabnet_bridge <- function(type, object, predictors, epoch, batch_size) {
   if (!is.null(epoch)) {
 
     if (epoch > (length(object$fit$checkpoints) * object$fit$config$checkpoint_epoch))
-      stop(gettextf("The model was trained for less than `%s` epochs", epoch), call. = FALSE)
+      value_error("The model was trained for less than {.val {epoch}} epochs")
 
     # find closest checkpoint for that epoch
     ind <- epoch %/% object$fit$config$checkpoint_epoch
@@ -547,13 +470,6 @@ predict_tabnet_bridge <- function(type, object, predictors, epoch, batch_size) {
   )
 }
 
-model_to_raw <- function(model) {
-  con <- rawConnection(raw(), open = "wr")
-  torch::torch_save(model, con)
-  on.exit({close(con)}, add = TRUE)
-  r <- rawConnectionValue(con)
-  r
-}
 
 model_pretrain_to_fit <- function(obj, x, y, config = tabnet_config()) {
 
@@ -565,7 +481,7 @@ model_pretrain_to_fit <- function(obj, x, y, config = tabnet_config()) {
   m <- reload_model(obj$serialized_net)
 
   if (m$input_dim != tabnet_model_lst$network$input_dim)
-    stop("Model dimensions don't match.", call. = FALSE)
+    runtime_error("Model dimensions don't match.")
 
   # perform update of selected weights into new tabnet_model
   m_stat_dict <- m$state_dict()
@@ -583,20 +499,6 @@ model_pretrain_to_fit <- function(obj, x, y, config = tabnet_config()) {
   }
   tabnet_model_lst$network$load_state_dict(tabnet_state_dict)
   tabnet_model_lst
-}
-
-
-check_net_is_empty_ptr <- function(object) {
-  is_null_external_pointer(object$fit$network$.check$ptr)
-}
-
-# https://stackoverflow.com/a/27350487/3297472
-is_null_external_pointer <- function(pointer) {
-  a <- attributes(pointer)
-  attributes(pointer) <- NULL
-  out <- identical(pointer, methods::new("externalptr"))
-  attributes(pointer) <- a
-  out
 }
 
 #' Check consistency between modeling-task type and class of outcomes vars.
@@ -617,7 +519,7 @@ check_type <- function(outcome_ptype, type = NULL) {
   outcome_all_numeric <- all(purrr::map_lgl(outcome_ptype, is.numeric))
 
   if (!outcome_all_numeric && !outcome_all_factor)
-    stop(gettextf("Mixed multi-outcome type '%s' is not supported", unique(purrr::map_chr(outcome_ptype, ~class(.x)[[1]]))), call. = FALSE)
+    not_implemented_error("Mixed multi-outcome type {.type {unique(purrr::map_chr(outcome_ptype, ~class(.x)[[1]]))}} is not supported")
 
   if (is.null(type)) {
     if (outcome_all_factor)
@@ -625,104 +527,22 @@ check_type <- function(outcome_ptype, type = NULL) {
     else if (outcome_all_numeric)
       type <- "numeric"
     else if (ncol(outcome_ptype) == 1)
-      stop(gettextf("Unknown outcome type '%s'", class(outcome_ptype)), call. = FALSE)
+      type_error("Unknown outcome type {.type {class(outcome_ptype)}}")
   }
 
   type <- rlang::arg_match(type, c("numeric", "prob", "class"))
 
   if (outcome_all_factor) {
     if (!type %in% c("prob", "class"))
-      stop(gettextf("Outcome is factor and the prediction type is '%s'.", type), call. = FALSE)
+      type_error("Outcome is factor and the prediction type is {.type {type}}.")
   } else if (outcome_all_numeric) {
     if (type != "numeric")
-      stop(gettextf("Outcome is numeric and the prediction type is '%s'.", type), call. = FALSE)
+      type_error("Outcome is numeric and the prediction type is {.type {type}}.")
   }
 
   invisible(type)
 }
 
-
-#' Check that Node object names are compliant
-#'
-#' @param node the Node object, or a dataframe ready to be parsed by `data.tree::as.Node()`
-#'
-#' @return node if it is compliant, else an Error with the column names to fix
-#' @export
-#'
-#' @examplesIf (require("data.tree") || require("dplyr"))
-#' library(dplyr)
-#' library(data.tree)
-#' data(starwars)
-#' starwars_tree <- starwars %>%
-#'   mutate(pathString = paste("tree", species, homeworld, `name`, sep = "/"))
-#'
-#' # pre as.Node() check
-#' try(check_compliant_node(starwars_tree))
-#'
-#' # post as.Node() check
-#' check_compliant_node(as.Node(starwars_tree))
-#'
-check_compliant_node <- function(node) {
-  #  prevent reserved data.tree Node colnames and the level_1 ... level_n names used for coercion
-  if (inherits(node, "Node")) {
-    # Node has already lost its reserved colnames
-    reserved_names <- paste0("level_", c(1:node$height))
-    actual_names <- node$attributesAll
-  } else if (inherits(node, "data.frame") && "pathString" %in% colnames(node)) {
-    node_height <- max(stringr::str_count(node$pathString, "/"))
-    reserved_names <- c(paste0("level_", c(1:node_height)), data.tree::NODE_RESERVED_NAMES_CONST)
-    actual_names <- colnames(node)[!colnames(node) %in% "pathString"]
-  } else {
-    stop("The provided hierarchical object is not recognized with a valid format that can be checked", call. = FALSE)
-  }
-
-  if (any(actual_names %in% reserved_names)) {
-    stop(domain=NA,
-         gettextf("The attributes or colnames in the provided hierarchical object use the following reserved names : '%s'. Please change those names as they will lead to unexpected tabnet behavior.",
-          paste(actual_names[actual_names %in% reserved_names], collapse = "', '")
-         ),
-         call. = FALSE)
-  }
-
-  invisible(node)
-}
-
-#' Turn a Node object into predictor and outcome.
-#'
-#' @param x Node object
-#' @param drop_last_level TRUE unused
-#'
-#' @return a named list of x and y, being respectively the predictor data-frame and the outcomes data-frame,
-#'   as expected inputs for `hardhat::mold()` function.
-#' @export
-#'
-#' @examplesIf (require("data.tree") || require("dplyr"))
-#' library(dplyr)
-#' library(data.tree)
-#' data(starwars)
-#' starwars_tree <- starwars %>%
-#'   mutate(pathString = paste("tree", species, homeworld, `name`, sep = "/")) %>%
-#'   as.Node()
-#' node_to_df(starwars_tree)$x %>% head()
-#' node_to_df(starwars_tree)$y %>% head()
-#' @importFrom dplyr last_col mutate mutate_if select starts_with where
-node_to_df <- function(x, drop_last_level = TRUE) {
-  # TODO get rid of all those import through base R equivalent
-  xy_df <- data.tree::ToDataFrameTypeCol(x, x$attributesAll)
-  x_df <- xy_df %>%
-    select(-starts_with("level_")) %>%
-    mutate_if(is.character, as.factor)
-  y_df <- xy_df %>%
-    select(starts_with("level_")) %>%
-    # drop first (and all zero-variance) column
-    select(where(~ nlevels(as.factor(.x)) > 1 )) %>%
-    # TODO take the drop_last_level param into account
-    # drop last level column
-    select(-last_col()) %>%
-    # TODO impute "NA" with parent through coalesce() via an option
-    mutate_if(is.character, as.factor)
-  return(list(x = x_df, y = y_df))
-}
 
 reload_model <- function(object) {
   con <- rawConnection(object)
@@ -785,4 +605,3 @@ nn_prune_head.tabnet_pretrain <- function(x, head_size) {
   }
 
 }
-

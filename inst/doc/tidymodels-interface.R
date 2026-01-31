@@ -22,7 +22,7 @@ knitr::opts_chunk$set(
 #   step_normalize(all_numeric())
 
 ## -----------------------------------------------------------------------------
-# mod <- tabnet(epochs = 50, batch_size = 128) %>%
+# mod <- tabnet(epochs = 50) %>%
 #   set_engine("torch", verbose = TRUE) %>%
 #   set_mode("classification")
 
@@ -35,17 +35,14 @@ knitr::opts_chunk$set(
 # folds <- vfold_cv(train, v = 5)
 
 ## -----------------------------------------------------------------------------
-# fit_rs <- wf %>%
-#   fit_resamples(folds)
+# fit_rs <- wf %>% fit_resamples(folds)
 
 ## -----------------------------------------------------------------------------
 # collect_metrics(fit_rs)
 
 ## -----------------------------------------------------------------------------
 # model <- wf %>% fit(train)
-# test %>%
-#   bind_cols(
-#     predict(model, test, type = "prob")
-#   ) %>%
-#   roc_auc(Class, .pred_bad)
+# model %>%
+#   augment( test) %>%
+#   roc_auc(Class, .pred_good, event_level = "second")
 

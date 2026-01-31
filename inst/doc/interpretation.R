@@ -52,7 +52,7 @@ syn2 <- make_syn2()
 syn4 <- make_syn4()
 
 ## -----------------------------------------------------------------------------
-fit_syn2 <- tabnet_fit(y ~ ., syn2, epochs = 10, verbose = TRUE, device = "cpu")
+fit_syn2 <- tabnet_fit(y ~ ., syn2, epochs = 45, learn_rate = 0.06, device = "cpu")
 
 ## -----------------------------------------------------------------------------
 vip::vip(fit_syn2)
@@ -61,13 +61,13 @@ vip::vip(fit_syn2)
 library(tidyverse)
 ex_syn2 <- tabnet_explain(fit_syn2, syn2)
 
-autoplot(ex_syn2)
+autoplot(ex_syn2, quantile = 0.99)
 
 ## -----------------------------------------------------------------------------
 autoplot(ex_syn2, type="steps")
 
 ## -----------------------------------------------------------------------------
-fit_syn4 <- tabnet_fit(y ~ ., syn4, epochs = 10, verbose = TRUE, device = "cpu")
+fit_syn4 <- tabnet_fit(y ~ ., syn4, epochs = 50, device = "cpu", learn_rate = 0.08)
 
 ## -----------------------------------------------------------------------------
 vip::vip(fit_syn4)
@@ -75,7 +75,7 @@ vip::vip(fit_syn4)
 ## -----------------------------------------------------------------------------
 ex_syn4 <- tabnet_explain(fit_syn4, arrange(syn4, V10))
 
-autoplot(ex_syn4, quantile=.995)
+autoplot(ex_syn4, quantile=.98)
 
 ## -----------------------------------------------------------------------------
 autoplot(ex_syn4, type="steps", quantile=.995)

@@ -19,33 +19,40 @@ status](https://www.r-pkg.org/badges/version/tabnet)](https://CRAN.R-project.org
 An R implementation of: [TabNet: Attentive Interpretable Tabular
 Learning](https://arxiv.org/abs/1908.07442) [(Sercan O. Arik, Tomas
 Pfister)](https://doi.org/10.48550/arXiv.1908.07442).  
-The code in this repository is an R port using the
+
+The code in this repository started by an R port using the
 [torch](https://github.com/mlverse/torch) package of
 [dreamquark-ai/tabnet](https://github.com/dreamquark-ai/tabnet)
-PyTorch’s implementation.  
-TabNet is augmented with [Coherent Hierarchical Multi-label
-Classification
-Networks](https://proceedings.neurips.cc//paper/2020/file/6dd4e10e3296fa63738371ec0d5df818-Paper.pdf)
-[(Eleonora Giunchiglia et
-Al.)](https://doi.org/10.48550/arXiv.2010.10151) for hierarchical
-outcomes.
+implementation.
+
+TabNet is now augmented with
+
+- [Coherent Hierarchical Multi-label Classification
+  Networks](https://proceedings.neurips.cc//paper/2020/file/6dd4e10e3296fa63738371ec0d5df818-Paper.pdf)
+  [(Eleonora Giunchiglia et
+  Al.)](https://doi.org/10.48550/arXiv.2010.10151) for hierarchical
+  outcomes
+
+- [Optimizing ROC Curves with a Sort-Based Surrogate Loss for Binary
+  Classification and Changepoint Detection (J Hillman, TD
+  Hocking)](https://jmlr.org/papers/v24/21-0751.html) for imbalanced
+  binary classification.
 
 ## Installation
 
-Tabnet is temporarily archived on CRAN. We are working hard to get it
-back. In the meantime, you can install the released version from
-r-universe with:
+Install [{tabnet} from CRAN](https://CRAN.R-project.org/package=tabnet)
+with:
 
 ``` r
-install.packages('tabnet', repos = c('https://mlverse.r-universe.dev', 'https://cloud.r-project.org'))
+install.packages('tabnet')
 ```
 
 The development version can be installed from
 [GitHub](https://github.com/mlverse/tabnet) with:
 
 ``` r
-# install.packages("remotes")
-remotes::install_github("mlverse/tabnet")
+# install.packages("pak")
+pak::pak("mlverse/tabnet")
 ```
 
 ## Basic Binary Classification Example
@@ -73,7 +80,7 @@ fit <- tabnet_fit(rec, train, epochs = 30, valid_split=0.1, learn_rate = 5e-3)
 autoplot(fit)
 ```
 
-<img src="man/figures/README-model-fit-1.png" width="100%" />
+<img src="man/figures/README-model-fit-1.png" alt="A training loss line-plot along training epochs. Both validation loss and training loss are shown. Training loss line includes regular dots at epochs where a checkpoint is recorded." width="100%" />
 
 The plots gives you an immediate insight about model over-fitting, and
 if any, the available model checkpoints available before the
@@ -106,7 +113,7 @@ cbind(test, predict(fit, test, type = "prob")) %>%
 #> # A tibble: 1 × 3
 #>   .metric .estimator .estimate
 #>   <chr>   <chr>          <dbl>
-#> 1 roc_auc binary         0.544
+#> 1 roc_auc binary         0.466
 ```
 
 ## Explain model on test-set with attention map
@@ -119,7 +126,7 @@ explain <- tabnet_explain(fit, test)
 autoplot(explain)
 ```
 
-<img src="man/figures/README-model-explain-1.png" width="100%" />
+<img src="man/figures/README-model-explain-1.png" alt="An heatmap as explainability plot showing for each variable of the test-set on the y axis the importance along each observation on the x axis. The value is a mask agggregate." width="100%" />
 
 or at **each layer** through the `type = "steps"` option:
 
@@ -127,7 +134,7 @@ or at **each layer** through the `type = "steps"` option:
 autoplot(explain, type = "steps")
 ```
 
-<img src="man/figures/README-step-explain-1.png" width="100%" />
+<img src="man/figures/README-step-explain-1.png" alt="An small-multiple heatmap as explainability plot for each step of the Tabnet network. Each plot shows for each variable of the test-set on the y axis the importance along each observation on the x axis." width="100%" />
 
 ## Self-supervised pretraining
 
@@ -141,18 +148,39 @@ pretrain <- tabnet_pretrain(rec, train, epochs = 50, valid_split=0.1, learn_rate
 autoplot(pretrain)
 ```
 
-<img src="man/figures/README-step-pretrain-1.png" width="100%" />
+<img src="man/figures/README-step-pretrain-1.png" alt="A training loss line-plot along pre-training epochs. Both validation loss and training loss are shown. Training loss line includes regular dots at epochs where a checkpoint is recorded." width="100%" />
 
 The example here is a toy example as the `train` dataset does actually
-contain outcomes. The vignette on [Self-supervised training and
-fine-tuning](https://mlverse.github.io/tabnet/articles/selfsupervised_training.html)
+contain outcomes. The vignette
+[`vignette("selfsupervised_training")`](https://mlverse.github.io/tabnet/articles/selfsupervised_training.html)
 will gives you the complete correct workflow step-by-step.
+
+## {tidymodels} integration
+
+The integration within tidymodels workflows offers you unlimited
+opportunity to compare {tabnet} models with challengers.
+
+Don’t miss the
+[`vignette("tidymodels-interface")`](https://mlverse.github.io/tabnet/articles/tidymodels-interface.html)
+for that.
 
 ## Missing data in predictors
 
 {tabnet} leverage the masking mechanism to deal with missing data, so
 you don’t have to remove the entries in your dataset with some missing
 values in the predictors variables.
+
+See
+[`vignette("Missing_data_predictors")`](https://mlverse.github.io/tabnet/articles/Missing_data_predictors.html)
+
+## Imbalanced binary classification
+
+{tabnet} includes a Area under the $Min(FPR,FNR)$ (AUM) loss function
+`nn_aum_loss()` dedicated to your imbalanced binary classification
+tasks.
+
+Try it out in
+[`vignette("aum_loss")`](https://mlverse.github.io/tabnet/articles/aum_loss.html)
 
 # Comparison with other implementations
 
@@ -167,6 +195,7 @@ values in the predictors variables.
 |  | workflow | ✅ |  |  |
 | ML Tasks | self-supervised learning | ✅ | ✅ |  |
 |  | classification (binary, multi-class) | ✅ | ✅ | ✅ |
+|  | unbalanced binary classification | ✅ |  |  |
 |  | regression | ✅ | ✅ | ✅ |
 |  | multi-outcome | ✅ | ✅ |  |
 |  | hierarchical multi-label classif. | ✅ |  |  |
